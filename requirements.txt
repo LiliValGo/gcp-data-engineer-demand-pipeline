@@ -1,0 +1,6 @@
+requests
+beautifulsoup4
+pydantic
+python-dateutil
+tenacity
+lxml
