@@ -1,0 +1,159 @@
+import yaml
+import logging
+from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+from pathlib import Path
+from difflib import SequenceMatcher
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RoleInfo:
+    """Information about a role"""
+    role_key: str
+    primary_names: List[str]
+    variants: List[str]
+    description: str
+    category: str
+    keywords: List[str]
+
+
+class RoleMapper:
+    """Maps job role queries to standardized roles and variants"""
+
+    def __init__(self, config_path: str = "role_mapper/config/roles.yaml"):
+        self.config_path = Path(config_path)
+        self.roles: Dict[str, RoleInfo] = {}
+        self._load_config()
+        logger.info(f"RoleMapper initialized with {len(self.roles)} roles")
+
+    def _load_config(self) -> None:
+        """Load role configuration from YAML"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            for role_key, role_data in config.get('roles', {}).items():
+                self.roles[role_key] = RoleInfo(
+                    role_key=role_key,
+                    primary_names=role_data.get('primary_names', []),
+                    variants=role_data.get('variants', []),
+                    description=role_data.get('description', ''),
+                    category=role_data.get('category', ''),
+                    keywords=role_data.get('keywords', [])
+                )
+            logger.debug(f"Loaded {len(self.roles)} roles from config")
+        except Exception as e:
+            logger.error(f"Failed to load role config: {e}")
+            raise
+
+    def find_role(self, query: str) -> Optional[RoleInfo]:
+        """
+        Find a role by query string.
+        
+        Searches through primary names, variants, and keywords.
+        Returns the best matching role or None.
+        """
+        query_lower = query.lower().strip()
+
+        # Exact match in primary names or variants
+        for role_key, role_info in self.roles.items():
+            all_names = role_info.primary_names + role_info.variants
+            for name in all_names:
+                if name.lower() == query_lower:
+                    logger.debug(f"Found exact match: {query} -> {role_key}")
+                    return role_info
+        
+        # Keyword match
+        for role_key, role_info in self.roles.items():
+            for keyword in role_info.keywords:
+                if keyword.lower() in query_lower or query_lower in keyword.lower():
+                    logger.debug(f"Found keyword match: {query} -> {role_key}")
+                    return role_info
+        
+        # Fuzzy match on variants
+        best_match = None
+        best_score = 0.6
+
+        for role_key, role_info in self.roles.items():
+            all_names = role_info.primary_names + role_info.variants
+            for name in all_names:
+                ratio = SequenceMatcher(None, query_lower, name.lower()).ratio()
+                if ratio > best_score:
+                    best_score = ratio
+                    best_match = role_info
+        
+        if best_match:
+            logger.debug(f"Found fuzzy match: {query} -> {best_match.role_key} (score: {best_score:.2f})")
+            return best_match
+        
+        logger.warning(f"No role found for query: {query}")
+        return None
+
+    def get_all_variants(self, role_key: str) -> Optional[List[str]]:
+        """Get all variants for a role"""
+        if role_key in self.roles:
+            return self.roles[role_key].variants
+        logger.warning(f"Role not found: {role_key}")
+        return None
+
+    def get_similarity_score(self, role1: str, role2: str) -> float:
+        """Calculate similarity between two roles (0.0 to 1.0)"""
+        r1 = self.find_role(role1)
+        r2 = self.find_role(role2)
+        
+        if not r1 or not r2:
+            return 0.0
+        
+        # Same role
+        if r1.role_key == r2.role_key:
+            return 1.0
+        
+        # Same category
+        if r1.category == r2.category:
+            return 0.7
+        
+        # Keyword overlap
+        keywords1 = set(r1.keywords)
+        keywords2 = set(r2.keywords)
+        overlap = len(keywords1 & keywords2)
+        max_keywords = max(len(keywords1), len(keywords2))
+        
+        if max_keywords > 0:
+            return (overlap / max_keywords) * 0.5
+        
+        return 0.0
+
+    def get_related_roles(self, query: str, threshold: float = 0.6) -> List[tuple]:
+        """
+        Find related roles to a query role.
+        
+        Returns:
+            List of (role_key, similarity_score) tuples sorted by score desc
+        """
+        role = self.find_role(query)
+        if not role:
+            return []
+        
+        related = []
+        for other_key, other_role in self.roles.items():
+            if other_key != role.role_key:
+                score = self.get_similarity_score(role.role_key, other_key)
+                if score >= threshold:
+                    related.append((other_key, score))
+        
+        related.sort(key=lambda x: x[1], reverse=True)
+        return related
+
+    def list_all_roles(self) -> List[Dict[str, Any]]:
+        """Return all available roles as dictionaries"""
+        return [
+            {
+                "role_key": role.role_key,
+                "primary_names": role.primary_names,
+                "variants": role.variants,
+                "description": role.description,
+            }
+            for role in self.roles.values()
+        ]

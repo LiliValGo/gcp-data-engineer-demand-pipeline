@@ -1,0 +1,30 @@
+{
+  "_metadata": {
+    "schema_version": 2,
+    "export_timestamp": "2026-03-05T23:29:58.995566",
+    "total_records": 0,
+    "role": "data_engineer",
+    "lineage": {
+      "source_url": "https://www.getonbrd.com/jobs",
+      "source_type": "web_scrape",
+      "extraction_method": "getonboard_scraper_v2",
+      "extraction_timestamp": "2026-03-05T23:29:58.995507",
+      "record_count": 0,
+      "schema_version": "JobV2",
+      "data_quality_metrics": {
+        "total_records": 0,
+        "valid_records": 0,
+        "invalid_records": 0,
+        "records_with_description": 0,
+        "records_with_skills": 0,
+        "records_with_experience": 0,
+        "avg_confidence": 0.0,
+        "null_description_rate": 0.0,
+        "null_location_rate": 0.0,
+        "null_salary_rate": 0.0
+      },
+      "owner": "data-engineering@company.com"
+    }
+  },
+  "data": []
+}

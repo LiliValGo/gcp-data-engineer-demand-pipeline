@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explorar Roles - Job Market</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo">📊 Explorador de Roles Laborales</h1>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="hero">
+            <h1>Descubre variantes de roles laborales</h1>
+            <p>Busca un rol y encuentra todas sus variantes relacionadas</p>
+        </div>
+
+        <div class="search-section">
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Ej: data analyst, data engineer, ingeniero de datos..."
+                class="search-input"
+            >
+            <button id="searchBtn" class="btn btn-primary">Buscar</button>
+        </div>
+
+        <div id="resultsContainer" class="results-container hidden">
+            <div id="variantsCard" class="card">
+                <h2>Variantes encontradas</h2>
+                <ul id="variantsList" class="variants-list"></ul>
+            </div>
+
+            <div id="relatedCard" class="card">
+                <h2>Roles relacionados</h2>
+                <ul id="relatedList" class="related-list"></ul>
+            </div>
+
+            <div class="actions">
+                <button id="scrapeBtn" class="btn btn-success" disabled>
+                    🚀 Iniciar Scraping
+                </button>
+                <div id="statusContainer" class="hidden"></div>
+            </div>
+        </div>
+
+        <div id="noResultsContainer" class="no-results hidden">
+            <p>No se encontró ningún rol. Intenta con otro término.</p>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Job Market Role Explorer</p>
+    </footer>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const noResultsContainer = document.getElementById('noResultsContainer');
+
+        searchBtn.addEventListener('click', async () => {
+            const query = searchInput.value.trim();
+            if (!query) {
+                alert('Por favor ingresa un rol');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+
+                if (data.results.length > 0) {
+                    displayResults(data);
+                    resultsContainer.classList.remove('hidden');
+                    noResultsContainer.classList.add('hidden');
+                } else {
+                    resultsContainer.classList.add('hidden');
+                    noResultsContainer.classList.remove('hidden');
+                }
+            } catch (error) {
+                alert('Error en la búsqueda: ' + error.message);
+            }
+        });
+
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchBtn.click();
+            }
+        });
+
+        function displayResults(data) {
+            const variantsList = document.getElementById('variantsList');
+            const relatedList = document.getElementById('relatedList');
+
+            variantsList.innerHTML = data.results.variants
+                .map(v => `<li class="badge badge-blue">${v}</li>`)
+                .join('');
+
+            relatedList.innerHTML = data.results.related
+                .map(r => `<li class="badge badge-green">${r} <span class="badge-score">Similitud</span></li>`)
+                .join('');
+        }
+    </script>
+</body>
+</html>
