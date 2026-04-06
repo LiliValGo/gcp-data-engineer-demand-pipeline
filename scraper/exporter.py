@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from dataclasses import asdict, dataclass
 
+import pandas as pd
+
 from .models import Job
 
 logger = logging.getLogger(__name__)
@@ -29,21 +31,23 @@ def export_jobs(
     lineage: Optional[DatasetLineage] = None
 ) -> str:
     """
-    Export jobs to JSON with schema versioning and lineage metadata
-    
+    Export jobs to Parquet with lineage metadata
+
     Args:
         jobs: List of Job objects
-        role: Role name for partitioning
+        role: Role name for partitioning (Hive-style)
         lineage: Optional lineage metadata
-    
+
     Returns:
-        Path to exported file
+        Path to exported parquet file
     """
-    base_dir = Path("data/raw") / f"role={role}"
+    base_dir = Path("data/bronze") / f"role={role}"
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    file_path = base_dir / f"{today}__v2.json"
+    # Timestamped filename for immutability - each run creates a new file
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    parquet_file = base_dir / f"{timestamp}__v2.parquet"
+    metadata_file = base_dir / f"{timestamp}__v2.metadata.json"
 
     # Create default lineage if not provided
     if not lineage:
@@ -63,39 +67,49 @@ def export_jobs(
             owner="data-engineering@company.com"
         )
 
-    # Serialize data
+    # Serialize jobs to list of dicts
     data = [job.model_dump(mode='json') for job in jobs]
 
-    # Create metadata
-    metadata = {
-        "_metadata": {
-            "schema_version": 2,
-            "export_timestamp": datetime.utcnow().isoformat(),
-            "total_records": len(jobs),
-            "role": role,
-            "lineage": asdict(lineage),
-        },
-        "data": data
-    }
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
 
-    # Save to file
+    # Save parquet file
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
+        df.to_parquet(
+            parquet_file,
+            engine='pyarrow',
+            compression='snappy',
+            index=False
+        )
+
+        # Save companion metadata file
+        metadata = {
+            "_metadata": {
+                "schema_version": 2,
+                "export_timestamp": datetime.utcnow().isoformat(),
+                "total_records": len(jobs),
+                "role": role,
+                "lineage": asdict(lineage),
+            }
+        }
+
+        with open(metadata_file, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        file_size = file_path.stat().st_size
+
+        file_size = parquet_file.stat().st_size
         logger.info(
             "jobs_exported",
             extra={
                 "extra_data": {
-                    "path": str(file_path),
+                    "parquet_path": str(parquet_file),
+                    "metadata_path": str(metadata_file),
                     "count": len(jobs),
                     "size_bytes": file_size
                 }
             }
         )
-        return str(file_path)
-    
+        return str(parquet_file)
+
     except Exception as e:
         logger.error(f"Failed to export jobs: {e}", exc_info=True)
         raise

@@ -1,6 +1,6 @@
 """Checkpoint system for idempotent scraping operations"""
 
-import sqlite3
+import duckdb
 import json
 import logging
 from pathlib import Path
@@ -29,12 +29,11 @@ class ScrapingCheckpoint:
     def _init_connection(self) -> None:
         """Initialize database connection"""
         try:
-            self.conn = sqlite3.connect(str(self.db_path))
-            self.conn.row_factory = sqlite3.Row
+            self.conn = duckdb.connect(str(self.db_path))
             logger.info(
                 f"Connected to checkpoint database: {self.db_path}"
             )
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Failed to connect to checkpoint DB: {e}")
             raise CheckpointException(
                 f"Cannot initialize checkpoint database: {str(e)}"
@@ -43,10 +42,8 @@ class ScrapingCheckpoint:
     def _init_tables(self) -> None:
         """Create tables if they don't exist"""
         try:
-            cursor = self.conn.cursor()
-
             # Main table for processed URLs
-            cursor.execute(
+            self.conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS processed_urls (
                     url TEXT PRIMARY KEY,
@@ -62,37 +59,35 @@ class ScrapingCheckpoint:
             )
 
             # Index for faster lookups
-            cursor.execute(
+            self.conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_role_search_term
                 ON processed_urls(role, search_term)
                 """
             )
 
-            cursor.execute(
+            self.conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_processed_at
                 ON processed_urls(processed_at)
                 """
             )
 
-            self.conn.commit()
             logger.debug("Checkpoint tables initialized")
 
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Failed to initialize checkpoint tables: {e}")
             raise CheckpointException(f"Cannot create checkpoint tables: {str(e)}")
 
     def is_processed(self, url: str) -> bool:
         """Check if URL has been processed"""
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(
+            result = self.conn.execute(
                 "SELECT 1 FROM processed_urls WHERE url = ? AND status = 'success'",
                 (url,),
-            )
-            return cursor.fetchone() is not None
-        except sqlite3.Error as e:
+            ).fetchone()
+            return result is not None
+        except duckdb.Error as e:
             logger.error(f"Error checking if URL processed: {e}")
             return False
 
@@ -108,15 +103,19 @@ class ScrapingCheckpoint:
     ) -> None:
         """Record that a URL has been processed"""
         try:
-            cursor = self.conn.cursor()
             metadata_json = json.dumps(metadata) if metadata else None
 
-            cursor.execute(
+            self.conn.execute(
                 """
-                INSERT OR REPLACE INTO processed_urls
+                INSERT INTO processed_urls
                 (url, search_term, role, processed_at, extraction_method,
                  confidence_score, metadata, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (url) DO UPDATE SET
+                    extraction_method = excluded.extraction_method,
+                    confidence_score  = excluded.confidence_score,
+                    metadata          = excluded.metadata,
+                    status            = excluded.status
                 """,
                 (
                     url,
@@ -129,10 +128,9 @@ class ScrapingCheckpoint:
                     status,
                 ),
             )
-            self.conn.commit()
             logger.debug(f"Marked URL as processed: {url}")
 
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Error marking URL as processed: {e}")
             raise CheckpointException(f"Cannot mark URL as processed: {str(e)}")
 
@@ -165,10 +163,8 @@ class ScrapingCheckpoint:
     def get_stats(self, role: Optional[str] = None) -> Dict[str, Any]:
         """Get checkpoint statistics"""
         try:
-            cursor = self.conn.cursor()
-
             if role:
-                cursor.execute(
+                row = self.conn.execute(
                     """
                     SELECT
                         COUNT(*) as total,
@@ -179,9 +175,9 @@ class ScrapingCheckpoint:
                     WHERE role = ?
                     """,
                     (role,),
-                )
+                ).fetchone()
             else:
-                cursor.execute(
+                row = self.conn.execute(
                     """
                     SELECT
                         COUNT(*) as total,
@@ -190,17 +186,16 @@ class ScrapingCheckpoint:
                         AVG(confidence_score) as avg_confidence
                     FROM processed_urls
                     """
-                )
+                ).fetchone()
 
-            row = cursor.fetchone()
             return {
-                "total_processed": row["total"] or 0,
-                "successful": row["success"] or 0,
-                "failed": row["failed"] or 0,
-                "avg_confidence": row["avg_confidence"] or 0.0,
+                "total_processed": row[0] or 0,
+                "successful": row[1] or 0,
+                "failed": row[2] or 0,
+                "avg_confidence": row[3] or 0.0,
             }
 
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Error getting stats: {e}")
             return {
                 "total_processed": 0,
@@ -228,21 +223,17 @@ class ScrapingCheckpoint:
             role: If specified, only reset for this role. Otherwise reset all.
         """
         try:
-            cursor = self.conn.cursor()
-
             if role:
-                cursor.execute(
+                self.conn.execute(
                     "DELETE FROM processed_urls WHERE role = ?",
                     (role,),
                 )
                 logger.warning(f"Reset checkpoints for role: {role}")
             else:
-                cursor.execute("DELETE FROM processed_urls")
+                self.conn.execute("DELETE FROM processed_urls")
                 logger.warning("Reset all checkpoints")
 
-            self.conn.commit()
-
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Error resetting checkpoints: {e}")
             raise CheckpointException(f"Cannot reset checkpoints: {str(e)}")
 
@@ -252,7 +243,7 @@ class ScrapingCheckpoint:
             if self.conn:
                 self.conn.close()
                 logger.debug("Checkpoint database closed")
-        except sqlite3.Error as e:
+        except duckdb.Error as e:
             logger.error(f"Error closing checkpoint database: {e}")
 
     def __enter__(self):

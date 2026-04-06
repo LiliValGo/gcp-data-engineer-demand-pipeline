@@ -13,6 +13,7 @@ from scraper.checkpoint import ScrapingCheckpoint
 from scraper.quality import DataQualityValidator, ExtractionConfidenceCalculator
 from scraper.models import JobV2
 from role_mapper.role_mapper import RoleMapper
+from scraper.medallion import MedallionPipeline
 
 
 def main():
@@ -120,8 +121,8 @@ def main():
         logger.info(f"  Average confidence: {quality_report.metrics.avg_confidence:.2f}")
         logger.info(f"  Null description rate: {quality_report.metrics.null_description_rate:.2%}")
 
-        # Export results
-        logger.info(f"\nExporting {len(all_jobs)} jobs to JSON...")
+        # Export to Bronze layer (Parquet)
+        logger.info(f"\nExporting {len(all_jobs)} jobs to Bronze layer (Parquet)...")
 
         lineage = DatasetLineage(
             source_url="https://www.getonbrd.com/jobs",
@@ -135,13 +136,19 @@ def main():
         )
 
         output_file = export_jobs(all_jobs, role="data_engineer", lineage=lineage)
+        logger.info(f"Bronze layer written: {output_file}")
 
-        logger.info(f"✅ Successfully exported {len(all_jobs)} jobs to {output_file}")
+        # Run Medallion pipeline: Bronze → Silver → Gold
+        logger.info("\nRunning Medallion pipeline (Bronze → Silver → Gold)...")
+        pipeline = MedallionPipeline()
+        pipeline.run_full_pipeline()
+        gold_summary = pipeline.get_gold_summary()
+        logger.info(f"Gold layer summary: {gold_summary}")
         logger.info(f"\n╔════════════════════════════════════════╗")
         logger.info(f"║  Scraping completed successfully       ║")
         logger.info(f"║  Total jobs: {len(all_jobs):27} │")
         logger.info(f"║  Valid jobs: {quality_report.metrics.valid_records:28} │")
-        logger.info(f"║  Output: {output_file:27} │")
+        logger.info(f"║  Bronze: {output_file:30} │")
         logger.info(f"╚════════════════════════════════════════╝")
 
     except Exception as e:
@@ -154,6 +161,8 @@ def main():
                 client.close()
             if 'checkpoint' in locals():
                 checkpoint.close()
+            if 'pipeline' in locals():
+                pipeline.close()
         except Exception as cleanup_error:
             logger.warning(f"Error during cleanup: {cleanup_error}")
 

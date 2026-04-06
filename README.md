@@ -1,82 +1,143 @@
-# Job Market Role Explorer & Data Engineer Scraper
+# GCP Data Engineer Demand Pipeline
 
-Sistema completo para explorar variantes de roles laborales y realizar web scraping de ofertas de empleo desde GetonBoard, refactorizado con patrones senior-level Data Engineering.
+A production-grade web scraping pipeline that tracks demand for data engineering
+roles in the Latin American job market. Targets [GetonBoard.com](https://www.getonbrd.com).
 
-## Features ✨
+Built as a learning project for senior data engineering patterns — runs locally
+now, migrates to GCP in Phase 4.
 
-- **Búsqueda Inteligente de Roles**: Descubre todas las variantes y sinónimos de un rol laboral
-- **Exploración de Roles Relacionados**: Encuentra roles con similitud y categorías relacionadas
-- **Web Scraper Robusto**: Extrae datos con retry automático, circuit breaker, checkpoint DB
-- **Data Quality Framework**: Valida datos con métricas de confianza de extracción
-- **Schema Versioning**: Control de versiones de esquema para evolución sin breaking changes
-- **Structured Logging**: Logs en JSON para observabilidad y auditoría
-- **FastAPI Web App**: Interfaz moderna para explorar roles y disparar scraping
-- **Idempotency**: Sistema de checkpoints para reintentos sin duplicación
+---
 
-## Setup Rápido
+## Architecture
+
+```
+Scraper (GetonBoard)
+    │
+    ▼
+Bronze  ── raw, immutable Parquet files
+    │      data/bronze/role=data_engineer/2026-04-06T14-30-00__v2.parquet
+    ▼
+Silver  ── cleaned, deduplicated DuckDB table
+    │      silver.jobs  (salary normalized, location parsed, canonical role)
+    ▼
+Gold    ── analytics aggregation tables
+           gold.demand_by_role    daily job counts per role
+           gold.salary_trends     salary percentiles per role / city
+           gold.skills_frequency  top skills per role
+```
+
+See [docs/MEDALLION.md](docs/MEDALLION.md) for the full architecture reference.
+
+---
+
+## Features
+
+- **Medallion Architecture** (Bronze / Silver / Gold) — mirrors BigQuery lake-house patterns
+- **DuckDB** as the local analytics engine (~90 % BigQuery SQL compatible)
+- **Parquet output** with Snappy compression (columnar, predicate-pushdown ready)
+- **Checkpoint system** — idempotent scraping; resumes without re-processing URLs
+- **Data Quality Framework** — confidence scoring per extraction method
+- **Role Mapper** — fuzzy-matched canonical role normalization across Spanish/English variants
+- **Schema versioning** — `JobV1` → `JobV2` with no breaking changes
+- **FastAPI web app** — query roles and trigger scraping via HTTP
+- **Structured JSON logging** — ready for Cloud Logging ingestion
+
+---
+
+## Quick Start
 
 ```bash
-# 1. Crear environment
+# 1. Create and activate virtual environment
 python -m venv venv && source venv/bin/activate
 
-# 2. Instalar
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Ejecutar scraper
+# 3. Run full pipeline (scrape + Bronze + Silver + Gold)
 python main_scraper.py
 
-# 4. O ejecutar web app
-python run_web.py  # Abre http://localhost:8000
+# 4. Or start the web app
+python run_web.py        # http://localhost:8000
 ```
 
-## Core Refactorings
+---
 
-✅ Logging Estructurado (JSON)
-✅ Data Quality Framework + Confidence Scoring
-✅ Checkpoint System (SQLite Idempotency)
-✅ Schema Versioning (JobV1 → JobV2)
-✅ Resilience Patterns (Circuit Breaker, Exponential Backoff)
-✅ Role Mapper System (Fuzzy Matching, Hierarchical)
-✅ Configuration Management (Pydantic Settings)
-✅ Lineage & Audit Trail
-
-## Estructura
+## Project Structure
 
 ```
-├── scraper/              ## Core module (refactorizado)
-├── role_mapper/          ## Role search system
-├── web/                  ## FastAPI web app
-├── main_scraper.py      ## Entry point
-├── run_web.py           ## Web server
-├── requirements.txt     ## Dependencies
-└── .env.example         ## Config template
+├── scraper/
+│   ├── models.py         # JobV2 Pydantic schema
+│   ├── client.py         # HTTP client with retry / circuit-breaker
+│   ├── parser.py         # BeautifulSoup HTML parsing
+│   ├── exporter.py       # Bronze Parquet writer
+│   ├── checkpoint.py     # DuckDB-backed idempotency store
+│   ├── quality.py        # Data quality rules + confidence scoring
+│   ├── medallion.py      # Bronze → Silver → Gold transformations
+│   ├── config.py         # Pydantic Settings
+│   └── logging_config.py # Structured JSON logging setup
+├── role_mapper/
+│   ├── role_mapper.py    # Fuzzy + keyword role matching
+│   └── config/roles.yaml # Role definitions (variants, keywords, hierarchy)
+├── web/
+│   ├── app.py            # FastAPI application factory
+│   └── routes.py         # API endpoints
+├── tests/                # 102 tests (pytest)
+├── docs/
+│   └── MEDALLION.md      # Architecture reference
+├── main_scraper.py       # CLI entry point
+└── requirements.txt
 ```
 
-## Uso
+---
 
-### Scraper CLI
+## Running Tests
+
 ```bash
-python main_scraper.py
-# Output: data/raw/role=data_engineer/2024-03-04__v2.json
+source venv/bin/activate
+pytest tests/ -v
+# 102 passed
 ```
 
-### Web App
+---
+
+## Output Files
+
+| Path | Description |
+|------|-------------|
+| `data/bronze/role={role}/{timestamp}__v2.parquet` | Raw scraped jobs (immutable) |
+| `data/bronze/role={role}/{timestamp}__v2.metadata.json` | Lineage + quality metrics |
+| `data/pipeline.duckdb` | Silver + Gold DuckDB tables |
+| `data/.checkpoints/urls.db` | Processed URL checkpoint store |
+
+---
+
+## Querying Gold Data
+
 ```bash
-python run_web.py
-# Abre http://localhost:8000
+duckdb data/pipeline.duckdb
+
+-- Top demanded roles
+SELECT * FROM gold.demand_by_role ORDER BY date DESC, job_count DESC LIMIT 10;
+
+-- Salary distribution for data engineers
+SELECT * FROM gold.salary_trends WHERE canonical_role = 'data_engineer';
+
+-- Most-mentioned skills
+SELECT skill, mention_count
+FROM gold.skills_frequency
+WHERE canonical_role = 'data_engineer'
+ORDER BY mention_count DESC
+LIMIT 15;
 ```
 
-### Role Mapper
-```python
-from role_mapper.role_mapper import RoleMapper
+---
 
-mapper = RoleMapper("role_mapper/config/roles.yaml")
-role = mapper.find_role("data analyst")
-print(role.variants)
-# ['data analyst', 'business intelligence', 'bi analyst', ...]
-```
+## Roadmap
 
-## Status: 🚀 Listo para Pruebas
-
-El refactor está 95% completo. La web app tiene estructura lista (routes TBD).
-Continúa con pruebas o implementación de web endpoints según necesites.
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 0 — Foundation | Done | Tests, fixed router, structured logging, quality framework |
+| 1 — Medallion + DuckDB | Done | Bronze/Silver/Gold, Parquet, checkpoint migration |
+| 2 — MCP Server | Planned | Expose Gold layer to Claude via Model Context Protocol |
+| 3 — Orchestration | Planned | Makefile, CLI flags, GitHub Actions CI |
+| 4 — GCP Production | Planned | GCS + BigQuery + Cloud Run + Terraform |
