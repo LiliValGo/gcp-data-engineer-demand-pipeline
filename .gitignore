@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment - NUNCA commitear el venv
+venv/
+.venv/
+env/
+
+# Variables de entorno - contienen secretos
+.env
+*.env
+
+# Data - archivos generados por el pipeline (grandes, no van en git)
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+data/.checkpoints/
+
+# Logs
+*.log
+logs/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# GCP credentials - NUNCA commitear
+*.json
+!role_mapper/config/*.yaml
+service-account*.json
+gcp-credentials*.json

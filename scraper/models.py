@@ -27,7 +27,7 @@ class JobV1(BaseModel):
     @field_validator("url", mode="before")
     @classmethod
     def convert_url_to_str(cls, v):
-        """Convierte HttpUrl a string"""
+        """Cast HttpUrl to plain string"""
         if v is not None:
             return str(v)
         return v
@@ -78,7 +78,7 @@ class JobV2(BaseModel):
     @field_validator("url", mode="before")
     @classmethod
     def convert_url_to_str(cls, v):
-        """Convierte HttpUrl a string"""
+        """Cast HttpUrl to plain string"""
         if v is not None:
             return str(v)
         return v

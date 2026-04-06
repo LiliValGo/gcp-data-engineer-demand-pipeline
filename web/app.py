@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 import logging
 
 from role_mapper.role_mapper import RoleMapper
+from web.routes import router
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Initialize role mapper
+# Initialize role mapper and store it in app.state so routes can access it
+# via dependency injection (Request.app.state.role_mapper)
 try:
-    role_mapper = RoleMapper("role_mapper/config/roles.yaml")
+    app.state.role_mapper = RoleMapper("role_mapper/config/roles.yaml")
 except Exception as e:
     logger.error(f"Failed to initialize role mapper: {e}")
-    role_mapper = None
+    app.state.role_mapper = None
+
+# Register the API router
+app.include_router(router)
 
 # Mount static files
 try:
