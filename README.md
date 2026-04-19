@@ -26,7 +26,9 @@ Gold    ── analytics aggregation tables
            gold.skills_frequency  top skills per role
 ```
 
-See [docs/MEDALLION.md](docs/MEDALLION.md) for the full architecture reference.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system architecture (local + GCP + dbt + Terraform).
+See [docs/MEDALLION.md](docs/MEDALLION.md) for the Medallion layer reference.
+See [docs/MCP.md](docs/MCP.md) for the MCP Server tools and CV gap analysis guide.
 
 ---
 
@@ -39,6 +41,8 @@ See [docs/MEDALLION.md](docs/MEDALLION.md) for the full architecture reference.
 - **Data Quality Framework** — confidence scoring per extraction method
 - **Role Mapper** — fuzzy-matched canonical role normalization across Spanish/English variants
 - **Schema versioning** — `JobV1` → `JobV2` with no breaking changes
+- **MCP Server** — Claude queries Gold layer via Model Context Protocol (5 tools)
+- **CV Gap Analysis** — paste a CV, get skill coverage % and learning roadmap
 - **FastAPI web app** — query roles and trigger scraping via HTTP
 - **Structured JSON logging** — ready for Cloud Logging ingestion
 
@@ -56,7 +60,10 @@ pip install -r requirements.txt
 # 3. Run full pipeline (scrape + Bronze + Silver + Gold)
 python main_scraper.py
 
-# 4. Or start the web app
+# 4. Start the MCP Server (Claude queries Gold layer)
+python run_mcp.py
+
+# 5. Or start the web app
 python run_web.py        # http://localhost:8000
 ```
 
@@ -75,16 +82,22 @@ python run_web.py        # http://localhost:8000
 │   ├── medallion.py      # Bronze → Silver → Gold transformations
 │   ├── config.py         # Pydantic Settings
 │   └── logging_config.py # Structured JSON logging setup
+├── mcp_server/
+│   ├── queries.py        # DuckDB query functions (Gold layer)
+│   └── server.py         # FastMCP + 5 tools
 ├── role_mapper/
 │   ├── role_mapper.py    # Fuzzy + keyword role matching
 │   └── config/roles.yaml # Role definitions (variants, keywords, hierarchy)
 ├── web/
 │   ├── app.py            # FastAPI application factory
 │   └── routes.py         # API endpoints
-├── tests/                # 102 tests (pytest)
+├── tests/                # 116 tests (pytest)
 ├── docs/
-│   └── MEDALLION.md      # Architecture reference
+│   ├── ARCHITECTURE.md   # Full system architecture (local + GCP)
+│   ├── MEDALLION.md      # Medallion layer reference
+│   └── MCP.md            # MCP Server tools + CV gap analysis guide
 ├── main_scraper.py       # CLI entry point
+├── run_mcp.py            # MCP Server entry point
 └── requirements.txt
 ```
 
@@ -95,7 +108,7 @@ python run_web.py        # http://localhost:8000
 ```bash
 source venv/bin/activate
 pytest tests/ -v
-# 102 passed
+# 116 passed
 ```
 
 ---
@@ -138,6 +151,6 @@ LIMIT 15;
 |-------|--------|-------------|
 | 0 — Foundation | Done | Tests, fixed router, structured logging, quality framework |
 | 1 — Medallion + DuckDB | Done | Bronze/Silver/Gold, Parquet, checkpoint migration |
-| 2 — MCP Server | Planned | Expose Gold layer to Claude via Model Context Protocol |
+| 2 — MCP Server | Done | Gold layer exposed to Claude — 5 tools + CV gap analysis |
 | 3 — Orchestration | Planned | Makefile, CLI flags, GitHub Actions CI |
 | 4 — GCP Production | Planned | GCS + BigQuery + Cloud Run + Terraform |
