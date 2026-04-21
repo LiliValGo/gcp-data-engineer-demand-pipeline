@@ -91,7 +91,7 @@ class GetOnBoardClient:
             # Try manual path first, fallback to webdriver-manager
             chromedriver_path = None
             manual_paths = [
-                str(Path.home() / ".wdm/drivers/chromedriver/mac64/145.0.7632.117/chromedriver-mac-arm64/chromedriver"),
+                str(Path.home() / ".wdm/drivers/chromedriver/mac64/147.0.7727.57/chromedriver-mac-arm64/chromedriver"),
                 "/usr/local/bin/chromedriver",
                 "/opt/homebrew/bin/chromedriver",
             ]
@@ -104,7 +104,12 @@ class GetOnBoardClient:
 
             if not chromedriver_path:
                 logger.debug("Using webdriver-manager to locate chromedriver")
-                chromedriver_path = ChromeDriverManager().install()
+                raw_path = ChromeDriverManager().install()
+                # webdriver-manager sometimes returns a non-executable file
+                # (e.g. THIRD_PARTY_NOTICES.chromedriver) instead of the
+                # actual binary. Resolve to the real executable in the same dir.
+                resolved = Path(raw_path).parent / "chromedriver"
+                chromedriver_path = str(resolved) if resolved.exists() else raw_path
 
             self.driver = webdriver.Chrome(
                 service=Service(chromedriver_path),

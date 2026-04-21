@@ -14,6 +14,7 @@ Singleton pattern:
 from __future__ import annotations
 
 import logging
+import pathlib
 from typing import Optional
 
 from scraper.medallion import MedallionPipeline
@@ -22,12 +23,17 @@ logger = logging.getLogger(__name__)
 
 _pipeline: Optional[MedallionPipeline] = None
 
+# Absolute path so the server works regardless of the working directory
+# (Claude Desktop launches the subprocess from a different cwd).
+_PROJECT_ROOT = pathlib.Path(__file__).parent.parent
+_DEFAULT_DB = str(_PROJECT_ROOT / "data" / "pipeline.duckdb")
 
-def get_pipeline(db_path: str = "data/pipeline.duckdb") -> MedallionPipeline:
+
+def get_pipeline(db_path: str = _DEFAULT_DB, read_only: bool = False) -> MedallionPipeline:
     """Return the singleton MedallionPipeline; creates it on the first call."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = MedallionPipeline(duckdb_path=db_path)
+        _pipeline = MedallionPipeline(duckdb_path=db_path, read_only=read_only)
     return _pipeline
 
 

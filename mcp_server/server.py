@@ -22,6 +22,11 @@ from mcp_server import queries
 
 mcp = FastMCP("job-market-pipeline")
 
+# Open the DB in read-only mode at startup.
+# This releases the exclusive file lock so the scraper can write to
+# pipeline.duckdb concurrently while the MCP server is running.
+queries.get_pipeline(read_only=True)
+
 
 @mcp.tool()
 def get_available_roles() -> list[dict]:

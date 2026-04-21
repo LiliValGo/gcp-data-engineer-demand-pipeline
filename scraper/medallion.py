@@ -79,13 +79,16 @@ class MedallionPipeline:
         duckdb_path: str = "data/pipeline.duckdb",
         bronze_root: str = "data/bronze",
         role_mapper_config: str = "role_mapper/config/roles.yaml",
+        read_only: bool = False,
     ):
         self.duckdb_path = Path(duckdb_path)
         self.bronze_root = Path(bronze_root)
-        self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.conn = duckdb.connect(str(self.duckdb_path))
-        self._init_schemas()
+        self.conn = duckdb.connect(str(self.duckdb_path), read_only=read_only)
+        if not read_only:
+            self._init_schemas()
 
         # RoleMapper is used to normalize each job's search_term to a
         # canonical role_key (e.g. "ingeniero de datos" → "data_engineer")
