@@ -98,6 +98,9 @@ python run_web.py        # http://localhost:8000
 │   └── MCP.md            # MCP Server tools + CV gap analysis guide
 ├── main_scraper.py       # CLI entry point
 ├── run_mcp.py            # MCP Server entry point
+├── scripts/
+│   ├── seed_demo_data.py  # Dev utility: seed Silver + Gold with demo rows
+│   └── test_mcp_direct.py # Dev utility: smoke-test all 5 MCP tools via JSON-RPC
 └── requirements.txt
 ```
 

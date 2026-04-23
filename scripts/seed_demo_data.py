@@ -220,7 +220,7 @@ def main():
 
     total_silver = conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
     print(f"\nsilver.jobs total: {total_silver} rows")
-    print("Done. Run python test_mcp_direct.py to test all MCP tools.")
+    print("Done. Run python scripts/test_mcp_direct.py to test all MCP tools.")
 
 
 if __name__ == "__main__":
