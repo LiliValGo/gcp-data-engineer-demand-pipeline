@@ -1,7 +1,6 @@
 """API routes for role exploration and scraping"""
 
 from fastapi import APIRouter, HTTPException, Request
-from typing import List, Dict, Optional
 import logging
 
 router = APIRouter(prefix="/api", tags=["roles"])

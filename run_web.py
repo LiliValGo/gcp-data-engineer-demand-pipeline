@@ -2,7 +2,6 @@
 """Run the FastAPI web application"""
 
 import uvicorn
-import logging
 from scraper.config import settings
 from scraper.logging_config import setup_logging
 from web.app import app

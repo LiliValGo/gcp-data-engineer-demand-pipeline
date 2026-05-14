@@ -4,7 +4,7 @@ Maps search terms to appropriate category URLs
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +65,11 @@ def get_strategy_urls(search_term: str) -> List[str]:
 
     # Try role mapper first (if available)
     try:
-        from ..role_mapper.role_mapper import RoleMapper
+        from role_mapper.role_mapper import RoleMapper
         mapper = RoleMapper("role_mapper/config/roles.yaml")
         role = mapper.find_role(term_lower)
         if role:
-            category = role.getonbrd_category
+            category = role.category
             if category in CATEGORY_URLS:
                 logger.debug(f"Strategy for '{search_term}': {category}")
                 return CATEGORY_URLS[category]

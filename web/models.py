@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
 
 
 class RoleSearchRequest(BaseModel):
@@ -45,25 +44,3 @@ class RelatedRolesResponse(BaseModel):
     role_key: str
     related: List[RelatedRole]
 
-
-class ScraperRequest(BaseModel):
-    """Request to trigger scraping"""
-    role_key: str
-    custom_search_terms: Optional[List[str]] = None
-
-
-class ScraperResponse(BaseModel):
-    """Response from scraper trigger"""
-    status: str
-    role: str
-    job_id: str
-    queued_at: datetime
-
-
-class ScraperStatusResponse(BaseModel):
-    """Response for scraper status"""
-    job_id: str
-    status: str  # queued, running, completed, failed
-    progress: int  # 0-100
-    records_processed: int
-    completed_at: Optional[datetime] = None

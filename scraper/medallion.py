@@ -12,7 +12,7 @@ Layers:
 Why this matters:
   - If a transformation has a bug, you can always replay from Bronze.
   - Silver is 90% compatible with BigQuery SQL (same DuckDB dialect).
-  - Gold tables are what the MCP Server will expose to Claude in Phase 2.
+  - Gold tables are exposed to Claude via the MCP Server (Phase 2, complete).
 """
 
 import re
@@ -211,7 +211,9 @@ class MedallionPipeline:
         if not location_raw:
             return None, False
 
-        cleaned = location_raw.strip()
+        # Take only the first line — GetonBoard appends descriptive text
+        # after newlines (e.g. "Santiago\n\nThis job is performed partly...")
+        cleaned = location_raw.strip().split("\n")[0].strip()
 
         # Check for remote first
         if cleaned.lower() in _REMOTE_KEYWORDS:
@@ -484,16 +486,15 @@ class MedallionPipeline:
         logger.info(f"=== Medallion Pipeline finished in {elapsed:.1f}s ===")
 
     # ------------------------------------------------------------------
-    # Introspection helpers (used by tests and the future MCP server)
+    # Introspection helpers (used by tests and the MCP server)
     # ------------------------------------------------------------------
 
     def query(self, sql: str) -> pd.DataFrame:
         """
         Execute a SQL query and return a pandas DataFrame.
 
-        This is the bridge between the local DuckDB warehouse and the MCP
-        Server in Phase 2 — the MCP tool will call pipeline.query(sql)
-        and return the result to Claude.
+        Bridge between the local DuckDB warehouse and the MCP Server —
+        MCP tools call pipeline.query(sql) and return the result to Claude.
         """
         return self.conn.execute(sql).df()
 

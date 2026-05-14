@@ -3,36 +3,6 @@ from datetime import datetime
 from typing import Optional, List
 
 
-class JobV1(BaseModel):
-    """
-    Original job schema - DEPRECATED
-    Use JobV2 for new code.
-    """
-
-    model_config = ConfigDict(validate_assignment=True)
-
-    title: str
-    company: str
-    location: Optional[str] = None
-    salary: Optional[str] = None
-    url: str
-    description: Optional[str] = None
-    search_term: str
-    skills: Optional[List[str]] = None
-    experience_level: Optional[str] = None
-    contract_type: Optional[str] = None
-    job_category: Optional[str] = None
-    scraped_at: datetime
-
-    @field_validator("url", mode="before")
-    @classmethod
-    def convert_url_to_str(cls, v):
-        """Cast HttpUrl to plain string"""
-        if v is not None:
-            return str(v)
-        return v
-
-
 class JobV2(BaseModel):
     """
     Enhanced job schema with extraction quality metrics and lineage.

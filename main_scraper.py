@@ -11,7 +11,6 @@ from scraper.parser import parse_jobs, parse_job_details
 from scraper.exporter import export_jobs, DatasetLineage
 from scraper.checkpoint import ScrapingCheckpoint
 from scraper.quality import DataQualityValidator, ExtractionConfidenceCalculator
-from scraper.models import JobV2
 from role_mapper.role_mapper import RoleMapper
 from scraper.medallion import MedallionPipeline
 
