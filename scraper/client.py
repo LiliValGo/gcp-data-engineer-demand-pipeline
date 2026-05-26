@@ -88,10 +88,9 @@ class GetOnBoardClient:
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument(f"user-agent={settings.user_agent}")
 
-            # Try manual path first, fallback to webdriver-manager
+            # Try known system paths first, fallback to webdriver-manager
             chromedriver_path = None
             manual_paths = [
-                str(Path.home() / ".wdm/drivers/chromedriver/mac64/147.0.7727.57/chromedriver-mac-arm64/chromedriver"),
                 "/usr/local/bin/chromedriver",
                 "/opt/homebrew/bin/chromedriver",
             ]
@@ -142,7 +141,7 @@ class GetOnBoardClient:
             for strategy_url in strategy_urls:
                 try:
                     self.driver.get(strategy_url)
-                    time.sleep(4)
+                    time.sleep(1)  # brief pause for JS init before element wait
 
                     WebDriverWait(self.driver, 10).until(
                         lambda d: len(

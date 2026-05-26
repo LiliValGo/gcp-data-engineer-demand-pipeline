@@ -43,6 +43,10 @@ def main():
             logger.info(f"Processing search term: {term}")
 
             try:
+                # Resolve canonical role for this search term once (reused in checkpoint calls)
+                canonical = role_mapper.find_role(term)
+                role_key = canonical.role_key if canonical else term
+
                 # Search for jobs
                 html = client.search(term)
                 jobs = parse_jobs(html, term)
@@ -87,7 +91,7 @@ def main():
                         checkpoint.mark_processed(
                             url=job.url,
                             search_term=term,
-                            role="data_engineer",
+                            role=role_key,
                             confidence_score=job.description_confidence,
                             extraction_method=job.description_extraction_method
                         )
@@ -101,7 +105,7 @@ def main():
                         checkpoint.mark_failed(
                             url=job.url,
                             search_term=term,
-                            role="data_engineer",
+                            role=role_key,
                             error_message=str(e)
                         )
                         continue

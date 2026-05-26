@@ -30,17 +30,17 @@ from role_mapper.role_mapper import RoleMapper
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Exchange rates to USD (approximate, hardcoded for Phase 1 — Phase 4
-# will fetch live rates from a GCP Secret Manager-stored FX API key)
+# Exchange rates to USD (approximate, updated May 2026 — Phase 4 will fetch
+# live rates from a GCP Secret Manager-stored FX API key)
 # ---------------------------------------------------------------------------
 _FX_TO_USD = {
     "USD": 1.0,
-    "CLP": 0.0011,  # Chilean Peso
-    "ARS": 0.0012,  # Argentine Peso (highly volatile)
-    "MXN": 0.058,   # Mexican Peso
-    "COP": 0.00025, # Colombian Peso
-    "BRL": 0.20,    # Brazilian Real
-    "PEN": 0.27,    # Peruvian Sol
+    "CLP": 0.00106,  # Chilean Peso (~945 CLP/USD)
+    "ARS": 0.001,    # Argentine Peso (~1000 ARS/USD, official rate)
+    "MXN": 0.056,    # Mexican Peso (~17.9 MXN/USD)
+    "COP": 0.000244, # Colombian Peso (~4100 COP/USD)
+    "BRL": 0.178,    # Brazilian Real (~5.6 BRL/USD)
+    "PEN": 0.267,    # Peruvian Sol (~3.74 PEN/USD)
 }
 
 # Salary pattern: captures optional currency, numbers (with . or , separators)
@@ -274,18 +274,35 @@ class MedallionPipeline:
         the latest data per URL without duplicating records. ON CONFLICT
         (url deduplication) ensures idempotency.
         """
-        parquet_pattern = str(self.bronze_root / "**" / "*.parquet")
         parquet_files = list(self.bronze_root.rglob("*.parquet"))
 
         if not parquet_files:
             logger.warning(f"No Bronze parquet files found in {self.bronze_root}")
             return 0
 
-        logger.info(f"Loading {len(parquet_files)} Bronze file(s)...")
+        # --- Incremental load: skip files already ingested into Silver ---
+        # Avoids reloading all historical Parquet files on every pipeline run.
+        try:
+            processed_paths = set(
+                self.conn.execute(
+                    "SELECT DISTINCT bronze_file_path FROM silver.jobs WHERE bronze_file_path IS NOT NULL"
+                ).fetchdf()["bronze_file_path"].tolist()
+            )
+        except Exception:
+            processed_paths = set()
 
-        # --- Step 1: Load all Bronze files into a single DataFrame ---
+        new_files = [fp for fp in parquet_files if str(fp) not in processed_paths]
+
+        if not new_files:
+            count = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
+            logger.info(f"No new Bronze files to process — Silver already up to date ({count} rows)")
+            return count
+
+        logger.info(f"Loading {len(new_files)} new Bronze file(s) (skipping {len(parquet_files) - len(new_files)} already in Silver)...")
+
+        # --- Step 1: Load only new Bronze files into a single DataFrame ---
         frames = []
-        for fp in parquet_files:
+        for fp in new_files:
             df = pd.read_parquet(fp)
             df["_bronze_file_path"] = str(fp)
             frames.append(df)
@@ -441,22 +458,41 @@ class MedallionPipeline:
         """)
 
         # --- gold.skills_frequency ---
-        # Answers: "What are the most-demanded skills per role?"
+        # Answers: "What % of jobs for this role mention each skill?"
         # UNNEST expands the VARCHAR[] array into individual rows.
-        # Same syntax works in BigQuery with UNNEST(skills).
+        # pct_of_role_jobs = jobs mentioning the skill / total jobs with skills for that role.
+        # (Previous formula used total skill mentions as denominator, which was misleading.)
         self.conn.execute("""
             CREATE OR REPLACE TABLE gold.skills_frequency AS
+            WITH skills_unnested AS (
+                SELECT
+                    job_id,
+                    canonical_role,
+                    LOWER(TRIM(skill)) AS skill
+                FROM silver.jobs,
+                    LATERAL UNNEST(skills) AS t(skill)
+                WHERE skills IS NOT NULL
+            ),
+            role_job_counts AS (
+                SELECT
+                    canonical_role,
+                    COUNT(DISTINCT job_id) AS total_jobs_with_skills
+                FROM silver.jobs
+                WHERE skills IS NOT NULL
+                GROUP BY canonical_role
+            )
             SELECT
-                canonical_role,
-                LOWER(TRIM(skill))   AS skill,
-                COUNT(*)             AS mention_count,
-                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER
-                    (PARTITION BY canonical_role), 2) AS pct_of_role_jobs
-            FROM silver.jobs,
-                LATERAL UNNEST(skills) AS t(skill)
-            WHERE skills IS NOT NULL
-            GROUP BY canonical_role, LOWER(TRIM(skill))
-            ORDER BY canonical_role, mention_count DESC
+                su.canonical_role,
+                su.skill,
+                COUNT(*)                                               AS mention_count,
+                ROUND(
+                    COUNT(DISTINCT su.job_id) * 100.0 / rjc.total_jobs_with_skills,
+                    2
+                )                                                      AS pct_of_role_jobs
+            FROM skills_unnested su
+            JOIN role_job_counts rjc USING (canonical_role)
+            GROUP BY su.canonical_role, su.skill, rjc.total_jobs_with_skills
+            ORDER BY su.canonical_role, mention_count DESC
         """)
 
         # Log Gold table sizes for observability

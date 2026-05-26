@@ -131,13 +131,14 @@ class TestSalaryParsing:
 
     def test_clp_converted_to_usd(self):
         min_usd, max_usd = self.pl._parse_salary("CLP 2000000 - 3000000")
-        # CLP → USD at 0.0011 rate
-        assert min_usd == pytest.approx(2000000 * 0.0011, abs=10)
-        assert max_usd == pytest.approx(3000000 * 0.0011, abs=10)
+        # CLP → USD at 0.00106 rate (updated May 2026)
+        assert min_usd == pytest.approx(2000000 * 0.00106, abs=10)
+        assert max_usd == pytest.approx(3000000 * 0.00106, abs=10)
 
     def test_ars_converted_to_usd(self):
         min_usd, _ = self.pl._parse_salary("ARS 80000")
-        assert min_usd == pytest.approx(80000 * 0.0012, abs=1)
+        # ARS → USD at 0.001 rate (updated May 2026)
+        assert min_usd == pytest.approx(80000 * 0.001, abs=1)
 
     def test_none_returns_none_none(self):
         assert self.pl._parse_salary(None) == (None, None)

@@ -53,7 +53,10 @@ def parse_jobs(html: str, search_term: str) -> List[Job]:
             location_tag = link.find("span", class_="location")
             location = location_tag.text.strip() if location_tag else None
 
-            salary_tag = link.find(string=lambda x: x and ("USD" in str(x) or "CLP" in str(x) or "mes" in str(x)))
+            salary_tag = link.find(string=lambda x: x and any(
+                curr in str(x)
+                for curr in ["USD", "CLP", "ARS", "MXN", "BRL", "PEN", "COP", "mes", "month"]
+            ))
             salary = salary_tag.strip() if salary_tag else None
 
             url = link.get("href")
