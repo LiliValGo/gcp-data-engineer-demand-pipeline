@@ -23,7 +23,7 @@
             <input
                 type="text"
                 id="searchInput"
-                placeholder="Ej: data analyst, data engineer, ingeniero de datos..."
+                placeholder="Ej: data analyst, data engineer, golang engineer..."
                 class="search-input"
             >
             <button id="searchBtn" class="btn btn-primary">Buscar</button>
@@ -31,7 +31,8 @@
 
         <div id="resultsContainer" class="results-container hidden">
             <div id="variantsCard" class="card">
-                <h2>Variantes encontradas</h2>
+                <h2>Palabras clave para el scraping</h2>
+                <p id="variantsHint" class="hint"></p>
                 <ul id="variantsList" class="variants-list"></ul>
             </div>
 
@@ -49,7 +50,7 @@
         </div>
 
         <div id="noResultsContainer" class="no-results hidden">
-            <p>No se encontró ningún rol. Intenta con otro término.</p>
+            <p>No se pudo procesar el término. Intenta con otro rol.</p>
         </div>
     </div>
 
@@ -60,9 +61,17 @@
     <script>
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
+        const scrapeBtn = document.getElementById('scrapeBtn');
         const resultsContainer = document.getElementById('resultsContainer');
         const noResultsContainer = document.getElementById('noResultsContainer');
+        const statusContainer = document.getElementById('statusContainer');
 
+        // Stores the current search result to pass to the scraper
+        let currentRoleKey = null;
+        let currentVariants = [];
+        let pollingInterval = null;
+
+        // ── Search ────────────────────────────────────────────────────────────
         searchBtn.addEventListener('click', async () => {
             const query = searchInput.value.trim();
             if (!query) {
@@ -70,11 +79,14 @@
                 return;
             }
 
+            searchBtn.disabled = true;
+            searchBtn.textContent = '⏳ Buscando...';
+
             try {
                 const response = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
                 const data = await response.json();
 
-                if (data.results.length > 0) {
+                if (data.results && data.results.length > 0) {
                     displayResults(data);
                     resultsContainer.classList.remove('hidden');
                     noResultsContainer.classList.add('hidden');
@@ -84,26 +96,125 @@
                 }
             } catch (error) {
                 alert('Error en la búsqueda: ' + error.message);
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Buscar';
             }
         });
 
         searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                searchBtn.click();
-            }
+            if (e.key === 'Enter') searchBtn.click();
         });
 
+        // ── Display search results ────────────────────────────────────────────
         function displayResults(data) {
-            const variantsList = document.getElementById('variantsList');
-            const relatedList = document.getElementById('relatedList');
+            const result = data.results[0];   // results is always an array of 1
 
-            variantsList.innerHTML = data.results.variants
+            // Store for later use by the scrape button
+            currentRoleKey = result.role_key;
+            currentVariants = result.variants;
+
+            // Variants list (= keywords that will be searched)
+            const variantsList = document.getElementById('variantsList');
+            variantsList.innerHTML = result.variants
                 .map(v => `<li class="badge badge-blue">${v}</li>`)
                 .join('');
 
-            relatedList.innerHTML = data.results.related
-                .map(r => `<li class="badge badge-green">${r} <span class="badge-score">Similitud</span></li>`)
-                .join('');
+            // Hint text
+            const hint = document.getElementById('variantsHint');
+            const origin = data.found
+                ? 'Variantes del catálogo de roles'
+                : 'Generadas automáticamente para este rol';
+            hint.textContent = `${result.variants.length} términos · ${origin}`;
+
+            // Related roles list
+            const relatedList = document.getElementById('relatedList');
+            if (result.related_roles && result.related_roles.length > 0) {
+                relatedList.innerHTML = result.related_roles
+                    .map(r => `<li class="badge badge-green">${r.role_key} <span class="badge-score">${r.score}</span></li>`)
+                    .join('');
+                document.getElementById('relatedCard').classList.remove('hidden');
+            } else {
+                relatedList.innerHTML = '<li class="badge badge-grey">Sin roles relacionados</li>';
+            }
+
+            // Enable the scrape button and reset status area
+            scrapeBtn.disabled = false;
+            scrapeBtn.textContent = '🚀 Iniciar Scraping';
+            statusContainer.classList.add('hidden');
+            statusContainer.innerHTML = '';
+        }
+
+        // ── Start scraping ────────────────────────────────────────────────────
+        scrapeBtn.addEventListener('click', async () => {
+            if (!currentRoleKey || currentVariants.length === 0) return;
+
+            scrapeBtn.disabled = true;
+            scrapeBtn.textContent = '⏳ Iniciando...';
+            statusContainer.classList.remove('hidden');
+            statusContainer.innerHTML = 'Iniciando scraping...';
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        role_key: currentRoleKey,
+                        variants: currentVariants,
+                    }),
+                });
+                const data = await response.json();
+
+                if (response.status === 409) {
+                    alert('Ya hay un scraping en progreso. Espera a que termine.');
+                    scrapeBtn.disabled = false;
+                    scrapeBtn.textContent = '🚀 Iniciar Scraping';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Error iniciando el scraping');
+                }
+
+                pollStatus(data.job_id, data.total_variants);
+
+            } catch (error) {
+                statusContainer.innerHTML = `❌ Error: ${error.message}`;
+                scrapeBtn.disabled = false;
+                scrapeBtn.textContent = '🚀 Iniciar Scraping';
+            }
+        });
+
+        // ── Poll job status ───────────────────────────────────────────────────
+        function pollStatus(jobId, total) {
+            if (pollingInterval) clearInterval(pollingInterval);
+
+            pollingInterval = setInterval(async () => {
+                try {
+                    const r = await fetch(`/api/status/${jobId}`);
+                    const d = await r.json();
+
+                    const pct = total > 0 ? Math.round((d.progress / total) * 100) : 0;
+                    statusContainer.innerHTML =
+                        `⏳ Buscando... ${d.progress}/${d.total} términos (${pct}%)`;
+
+                    if (d.status === 'done') {
+                        clearInterval(pollingInterval);
+                        scrapeBtn.disabled = false;
+                        scrapeBtn.textContent = '🚀 Iniciar Scraping';
+                        const jobs = d.result ? d.result.jobs_found : 0;
+                        statusContainer.innerHTML =
+                            `✅ Completado — ${jobs} empleos encontrados (${d.total} términos buscados)`;
+                    } else if (d.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        scrapeBtn.disabled = false;
+                        scrapeBtn.textContent = '🚀 Iniciar Scraping';
+                        statusContainer.innerHTML = `❌ Error: ${d.error}`;
+                    }
+                } catch (err) {
+                    statusContainer.innerHTML = `⚠️ No se pudo obtener el estado: ${err.message}`;
+                }
+            }, 3000);
         }
     </script>
 </body>

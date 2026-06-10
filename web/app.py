@@ -20,10 +20,18 @@ app = FastAPI(
 # Initialize role mapper and store it in app.state so routes can access it
 # via dependency injection (Request.app.state.role_mapper)
 try:
-    app.state.role_mapper = RoleMapper("role_mapper/config/roles.yaml")
+    from scraper.config import settings
+    app.state.role_mapper = RoleMapper(
+        "role_mapper/config/roles.yaml",
+        google_api_key=settings.google_api_key
+    )
 except Exception as e:
     logger.error(f"Failed to initialize role mapper: {e}")
     app.state.role_mapper = None
+
+# In-memory store for background scrape jobs: {job_id: {...}}
+# Each entry: {status, variants, progress, total, result, error}
+app.state.scrape_jobs = {}
 
 # Register the API router
 app.include_router(router)

@@ -1,9 +1,12 @@
 import yaml
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 from difflib import SequenceMatcher
+
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +25,27 @@ class RoleInfo:
 class RoleMapper:
     """Maps job role queries to standardized roles and variants"""
 
-    def __init__(self, config_path: str = "role_mapper/config/roles.yaml"):
+    def __init__(self, config_path: str = "role_mapper/config/roles.yaml", google_api_key: Optional[str] = None):
         self.config_path = Path(config_path)
         self.roles: Dict[str, RoleInfo] = {}
         self._load_config()
+
+        # Initialize Gemini client for AI-powered variant generation
+        self.google_api_key = google_api_key
+        self.gemini_model = None
+        if google_api_key:
+            try:
+                genai.configure(api_key=google_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                logger.info("Gemini API client initialized for AI variant generation")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Gemini client: {e} — will fall back to templates")
+
+        # LRU cache for AI-generated role variants (max 50 roles)
+        self._generated_roles_cache = {}
+        self._cache_order = []
+        self._cache_max_size = 50
+
         logger.info(f"RoleMapper initialized with {len(self.roles)} roles")
 
     def _load_config(self) -> None:
@@ -157,3 +177,191 @@ class RoleMapper:
             }
             for role in self.roles.values()
         ]
+
+    def _get_from_cache(self, query: str) -> Optional[Dict]:
+        """Retrieve a generated role from LRU cache."""
+        return self._generated_roles_cache.get(query.lower().strip())
+
+    def _add_to_cache(self, query: str, role_data: Dict) -> None:
+        """Add a generated role to LRU cache, evicting oldest if needed."""
+        query_key = query.lower().strip()
+        if query_key in self._generated_roles_cache:
+            # Move to end (most recent)
+            self._cache_order.remove(query_key)
+            self._cache_order.append(query_key)
+        else:
+            # Add new entry
+            if len(self._cache_order) >= self._cache_max_size:
+                # Evict oldest
+                oldest = self._cache_order.pop(0)
+                del self._generated_roles_cache[oldest]
+            self._cache_order.append(query_key)
+
+        self._generated_roles_cache[query_key] = role_data
+        logger.debug(f"Cached generated role '{query}' (cache size: {len(self._cache_order)}/{self._cache_max_size})")
+
+    def generate_variants_with_gemini(self, query: str) -> Optional[Dict]:
+        """
+        Generate role variants, description, skills, and category using Google Gemini API.
+
+        Returns a dict with:
+        {
+            "role_key": str,
+            "variants": List[str],
+            "description": str,
+            "skills": List[str],
+            "category": str,
+        }
+
+        Uses LRU cache to avoid redundant Gemini API calls.
+        Falls back to template-based generation if Gemini is not available.
+        """
+        # Check cache first
+        cached = self._get_from_cache(query)
+        if cached:
+            logger.debug(f"Using cached variants for '{query}'")
+            return cached
+
+        # If no Gemini model, fall back to template-based generation
+        if not self.gemini_model:
+            logger.debug(f"Gemini not available, using template-based variants for '{query}'")
+            return self._generate_variants_template_fallback(query)
+
+        try:
+            prompt = f"""You are a tech job market expert. Generate comprehensive variants for the tech role: "{query}"
+
+Please respond with ONLY a valid JSON object (no markdown, no extra text). Use this exact format:
+{{
+    "role_key": "lowercase_underscore_version_of_primary_role",
+    "variants": [
+        "primary role in English",
+        "variant 1 in English",
+        "variant 2 in English",
+        "rol primario en Español",
+        "variante 1 en Español",
+        "variante 2 en Español"
+    ],
+    "description": "1-2 sentence description of what this role does",
+    "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
+    "category": "one of: data, analytics, engineering, backend, frontend, devops, cloud, security, architecture, ai_ml"
+}}
+
+Ensure:
+- At least 4-6 variants total (EN + ES combined)
+- Include common aliases and synonyms
+- Include both singular and with suffixes (engineer, developer, specialist, etc)
+- Skills are realistic for someone searching job listings"""
+
+            response = self.gemini_model.generate_content(prompt)
+            response_text = response.text.strip()
+
+            # Parse JSON response
+            role_data = json.loads(response_text)
+
+            # Validate required fields
+            required = {"role_key", "variants", "description", "skills", "category"}
+            if not all(field in role_data for field in required):
+                raise ValueError(f"Gemini response missing required fields. Got: {role_data.keys()}")
+
+            # Cache the result
+            self._add_to_cache(query, role_data)
+
+            logger.info(f"Generated {len(role_data['variants'])} variants for '{query}' using Gemini")
+            return role_data
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            return self._generate_variants_template_fallback(query)
+        except Exception as e:
+            logger.error(f"Gemini API error: {e}", exc_info=True)
+            return self._generate_variants_template_fallback(query)
+
+    def _generate_variants_template_fallback(self, query: str) -> Dict:
+        """Fallback to simple template-based generation when Gemini is unavailable."""
+        term = query.strip().lower()
+
+        # Detect if role already has a job title suffix
+        job_suffixes = {"engineer", "developer", "manager", "owner", "lead", "specialist", "analyst", "architect", "qa", "qe", "director", "coordinator", "support"}
+        has_suffix = any(term.endswith(f" {suffix}") or term == suffix for suffix in job_suffixes)
+
+        # Spanish translations for common terms
+        spanish_map = {
+            "engineer": "ingeniero",
+            "developer": "desarrollador",
+            "manager": "gerente",
+            "owner": "propietario",
+            "lead": "líder",
+            "specialist": "especialista",
+            "analyst": "analista",
+            "architect": "arquitecto",
+            "qa": "qa",
+            "support": "soporte",
+        }
+
+        variants = [term]  # Start with original term
+
+        if has_suffix:
+            # Role already has a suffix - generate minimal variants
+            # Engineer <-> Developer swap
+            swapped = term.replace("engineer", "developer").replace("developer", "engineer")
+            if swapped != term:
+                variants.append(swapped)
+
+            # Spanish translation for suffix
+            for eng, esp in spanish_map.items():
+                if f" {eng}" in term or term == eng or term.endswith(f" {eng}"):
+                    spanish_variant = term.replace(eng, esp)
+                    if spanish_variant != term:
+                        variants.append(spanish_variant)
+                    break
+        else:
+            # Base term without suffix - add engineer/developer variants
+            variants.extend([
+                f"{term} engineer",
+                f"{term} developer",
+                f"ingeniero {term}",
+                f"desarrollador {term}",
+            ])
+
+        variants = [v.strip() for v in variants if v and v.strip()]
+        variants = list(dict.fromkeys(variants))  # deduplicate
+
+        return {
+            "role_key": term.replace(" ", "_"),
+            "variants": variants,
+            "description": f"Professional specializing in {term}",
+            "skills": [term],
+            "category": "engineering",
+        }
+
+    def generate_variants_for_unknown(self, term: str) -> List[str]:
+        """
+        Generate EN/ES search keyword variants for a role not in the catalog.
+
+        Extracts the base from common suffixes ("engineer", "developer") and
+        builds a small set of EN + ES equivalents so the scraper has multiple
+        search terms even for roles not explicitly defined in roles.yaml.
+
+        Examples:
+            "golang engineer" → ["golang engineer", "golang developer",
+                                  "ingeniero golang", "desarrollador golang"]
+            "ml ops"          → ["ml ops", "ml ops engineer", "ml ops developer",
+                                  "ingeniero ml ops", "desarrollador ml ops"]
+        """
+        term = term.strip().lower()
+        base = term.replace(" engineer", "").replace(" developer", "").strip()
+        candidates = [
+            term,
+            f"{base} engineer",
+            f"{base} developer",
+            f"ingeniero {base}",
+            f"desarrollador {base}",
+        ]
+        # Preserve insertion order, remove duplicates and empty strings
+        seen: set = set()
+        variants = []
+        for v in candidates:
+            if v and v not in seen:
+                seen.add(v)
+                variants.append(v)
+        return variants

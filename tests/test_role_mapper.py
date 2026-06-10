@@ -159,3 +159,72 @@ class TestListAllRoles:
         """list_all_roles must return the same count as the loaded roles dict."""
         roles = mapper.list_all_roles()
         assert len(roles) == len(mapper.roles)
+
+
+class TestTemplateFallback:
+    """Tests for _generate_variants_template_fallback (when Gemini unavailable)."""
+
+    def test_fallback_with_role_already_having_suffix(self, mapper):
+        """Roles like 'project manager' should NOT generate 'project manager engineer'."""
+        result = mapper._generate_variants_template_fallback("project manager")
+
+        assert result["role_key"] == "project_manager"
+        assert "project manager" in result["variants"]
+        # Should NOT contain nonsensical variants
+        assert "project manager engineer" not in result["variants"]
+        assert "project manager developer" not in result["variants"]
+
+    def test_fallback_with_qa_role(self, mapper):
+        """QA should generate minimal variants without adding 'engineer'."""
+        result = mapper._generate_variants_template_fallback("QA")
+
+        assert result["role_key"] == "qa"
+        assert "qa" in result["variants"]
+        # Should not generate "qa engineer" or "qa developer"
+        assert not any("engineer" in v.lower() or "developer" in v.lower()
+                       for v in result["variants"])
+
+    def test_fallback_with_base_skill_no_suffix(self, mapper):
+        """Base skills like 'rust' should get engineer/developer suffixes."""
+        result = mapper._generate_variants_template_fallback("rust")
+
+        assert result["role_key"] == "rust"
+        assert "rust" in result["variants"]
+        assert "rust engineer" in result["variants"]
+        assert "rust developer" in result["variants"]
+
+    def test_fallback_with_manager_title(self, mapper):
+        """Titles with 'manager' should translate to Spanish correctly."""
+        result = mapper._generate_variants_template_fallback("project manager")
+
+        # Should have Spanish translation
+        spanish_variants = [v for v in result["variants"] if "gerente" in v or "manager" in v]
+        assert len(spanish_variants) > 0
+
+    def test_fallback_with_analytics_engineer(self, mapper):
+        """Roles that already contain 'engineer' should not duplicate it."""
+        result = mapper._generate_variants_template_fallback("analytics engineer")
+
+        assert "analytics engineer" in result["variants"]
+        # Should not have double suffixes
+        assert not any(v.count("engineer") > 1 for v in result["variants"])
+
+    def test_fallback_returns_required_fields(self, mapper):
+        """Fallback must always return role_key, variants, description, skills, category."""
+        result = mapper._generate_variants_template_fallback("any role")
+
+        assert "role_key" in result
+        assert "variants" in result
+        assert "description" in result
+        assert "skills" in result
+        assert "category" in result
+        assert isinstance(result["variants"], list)
+        assert len(result["variants"]) > 0
+
+    def test_fallback_deduplicates_variants(self, mapper):
+        """Fallback should not return duplicate variants."""
+        result = mapper._generate_variants_template_fallback("developer engineer")
+
+        variants = result["variants"]
+        assert len(variants) == len(set(variants))  # No duplicates
+
