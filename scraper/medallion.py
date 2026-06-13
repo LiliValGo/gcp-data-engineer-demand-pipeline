@@ -11,8 +11,8 @@ Layers:
 
 Why this matters:
   - If a transformation has a bug, you can always replay from Bronze.
-  - Silver is 90% compatible with BigQuery SQL (same DuckDB dialect).
-  - Gold tables are exposed to Claude via the MCP Server (Phase 2, complete).
+  - Silver is compatible with BigQuery SQL (same DuckDB dialect).
+  - Gold tables are exposed to Claude via the MCP Server.
 """
 
 import re
@@ -29,10 +29,7 @@ from role_mapper.role_mapper import RoleMapper
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Exchange rates to USD (approximate, updated May 2026 — Phase 4 will fetch
-# live rates from a GCP Secret Manager-stored FX API key)
-# ---------------------------------------------------------------------------
+# Exchange rates to USD (approximate, May 2026)
 _FX_TO_USD = {
     "USD": 1.0,
     "CLP": 0.00106,  # Chilean Peso (~945 CLP/USD)
@@ -136,8 +133,11 @@ class MedallionPipeline:
             )
         """)
 
-        # Gold tables are created by run_silver_to_gold() using CREATE OR REPLACE,
-        # so no DDL needed here.
+        # Indexes for common filter queries
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_silver_search_term ON silver.jobs(search_term)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_silver_canonical_role ON silver.jobs(canonical_role)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_silver_url ON silver.jobs(url)")
+
         logger.debug("Schemas initialized")
 
     # ------------------------------------------------------------------
@@ -367,6 +367,8 @@ class MedallionPipeline:
         self.conn.register("_silver_staging", silver_df)
 
         self.conn.execute("""
+            DELETE FROM silver.jobs WHERE job_id IN (SELECT job_id FROM _silver_staging);
+
             INSERT INTO silver.jobs
             SELECT
                 job_id, url, title, company, canonical_role, search_term,
@@ -377,21 +379,6 @@ class MedallionPipeline:
                 TRY_CAST(processing_timestamp AS TIMESTAMP),
                 bronze_file_path
             FROM _silver_staging
-            ON CONFLICT (job_id) DO UPDATE SET
-                title                    = excluded.title,
-                company                  = excluded.company,
-                canonical_role           = excluded.canonical_role,
-                city                     = excluded.city,
-                is_remote                = excluded.is_remote,
-                salary_usd_min           = excluded.salary_usd_min,
-                salary_usd_max           = excluded.salary_usd_max,
-                description              = excluded.description,
-                skills                   = excluded.skills,
-                experience_level         = excluded.experience_level,
-                extraction_quality_score = excluded.extraction_quality_score,
-                scraped_at               = excluded.scraped_at,
-                processing_timestamp     = excluded.processing_timestamp,
-                bronze_file_path         = excluded.bronze_file_path
         """)
 
         self.conn.unregister("_silver_staging")
@@ -409,9 +396,7 @@ class MedallionPipeline:
         Build (or refresh) the three Gold analytics tables from silver.jobs.
 
         All three tables use CREATE OR REPLACE — they are fully recomputed on
-        each run. This is called 'full refresh' and is appropriate for small
-        datasets (<1M rows). In Phase 4/BigQuery we will switch to incremental
-        writes using MERGE for cost efficiency.
+        each run. This is appropriate for small datasets (<1M rows).
         """
         silver_count = self.conn.execute(
             "SELECT COUNT(*) FROM silver.jobs"

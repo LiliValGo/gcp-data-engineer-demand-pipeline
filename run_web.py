@@ -16,8 +16,11 @@ if __name__ == "__main__":
     logger.info(f"Starting Job Market Role Explorer")
     logger.info(f"Server: http://{settings.fastapi_host}:{settings.fastapi_port}")
 
+    # When reload=True, must pass app as import string, not object
+    app_str = "web.app:app" if settings.fastapi_reload else app
+
     uvicorn.run(
-        app,
+        app_str,
         host=settings.fastapi_host,
         port=settings.fastapi_port,
         reload=settings.fastapi_reload,

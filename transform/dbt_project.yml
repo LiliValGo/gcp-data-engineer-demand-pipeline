@@ -1,0 +1,27 @@
+name: 'job_market_pipeline'
+version: '1.0.0'
+config-version: 2
+
+# This references the profile name in profiles.yml
+profile: 'job_market_pipeline'
+
+# Paths relative to this file
+model-paths:    ["models"]
+test-paths:     ["tests"]
+macro-paths:    ["macros"]
+target-path:    "target"
+clean-targets:  ["target", "dbt_packages"]
+
+# ─── Model configurations ────────────────────────────────────────────────────
+#
+# Each folder under models/ gets a default materialization.
+# The key rule: the schema name here maps to a DuckDB schema (locally)
+# and a BigQuery dataset (Phase 4) — no code change needed, only profile switch.
+#
+models:
+  job_market_pipeline:
+    gold:
+      # Full refresh on every dbt run — correct for small aggregate tables.
+      # Phase 4: BigQuery MERGE will be used instead for cost efficiency.
+      +materialized: table
+      +schema: gold

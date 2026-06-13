@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: demand_by_role
+    description: >
+      Daily job count per canonical role. Full refresh on every dbt run.
+      Used by the MCP tool get_demand_trends() and future dashboard endpoints.
+    columns:
+      - name: canonical_role
+        description: "Normalized role key (e.g. 'data_engineer', 'data_analyst')"
+        tests:
+          - not_null
+      - name: date
+        description: "Scrape date (truncated from scraped_at timestamp)"
+        tests:
+          - not_null
+      - name: job_count
+        description: "Number of job postings scraped for this role on this date"
+        tests:
+          - not_null
+      - name: unique_companies
+        description: "Count of distinct companies posting for this role on this date"
+      - name: avg_quality_score
+        description: "Average extraction_quality_score for jobs on this date/role"
+
+  - name: salary_trends
+    description: >
+      Salary statistics (min, avg, max, median) in USD per role and city.
+      Only includes jobs where salary was successfully extracted and parsed.
+    columns:
+      - name: canonical_role
+        description: "Normalized role key"
+        tests:
+          - not_null
+      - name: city
+        description: "City name, or 'Remote/Unknown' when city could not be parsed"
+        tests:
+          - not_null
+      - name: jobs_with_salary
+        description: "Count of jobs used to compute these salary stats"
+        tests:
+          - not_null
+      - name: median_min_usd
+        description: "Median of the minimum salary across jobs in USD (annual)"
+
+  - name: skills_frequency
+    description: >
+      Skills demand per role: how many jobs mention each skill and what
+      percentage of that role's jobs require it.
+    columns:
+      - name: canonical_role
+        description: "Normalized role key"
+        tests:
+          - not_null
+      - name: skill
+        description: "Lowercased, trimmed skill name (e.g. 'python', 'bigquery')"
+        tests:
+          - not_null
+      - name: mention_count
+        description: "Number of job postings that mention this skill for this role"
+        tests:
+          - not_null
+      - name: pct_of_role_jobs
+        description: >
+          Percentage of jobs for this role that mention this skill.
+          Formula: COUNT(DISTINCT job_id with skill) / COUNT(DISTINCT job_id for role) * 100
+        tests:
+          - not_null

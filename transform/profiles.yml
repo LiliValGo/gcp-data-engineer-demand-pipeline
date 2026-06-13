@@ -1,0 +1,13 @@
+job_market_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Path is relative to the transform/ directory where dbt commands are run.
+      # Locally this resolves to data/pipeline.duckdb — the same file that
+      # medallion.py writes to. dbt opens it in read-write mode to create
+      # the Gold tables.
+      # Phase 4: swap this entire block for a BigQuery profile — models run unchanged.
+      path: '../data/pipeline.duckdb'
+      schema: main
+      threads: 1

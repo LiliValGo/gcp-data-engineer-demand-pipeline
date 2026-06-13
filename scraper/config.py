@@ -157,6 +157,12 @@ class ScraperSettings(BaseSettings):
         description="BigQuery dataset name"
     )
 
+    # Google Gemini API (optional)
+    google_api_key: Optional[str] = Field(
+        default=None,
+        description="Google API key for Gemini (used to generate role variants)"
+    )
+
     # Web app configuration
     fastapi_host: str = Field(
         default="0.0.0.0",

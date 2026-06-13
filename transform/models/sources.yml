@@ -1,0 +1,37 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver      # maps to the DuckDB 'silver' schema (written by medallion.py)
+    description: >
+      Cleaned and normalized job data produced by the Python medallion pipeline
+      (scraper/ + medallion.py). One row per unique job URL, latest scrape wins
+      via MD5-based upsert.
+
+    tables:
+      - name: jobs
+        description: >
+          Source of truth for all downstream Gold models. Contains scraped job
+          postings with parsed salary (USD), normalized city, canonical role,
+          and extracted skills array.
+
+        columns:
+          - name: job_id
+            description: "MD5(url) — stable, deterministic deduplication key"
+            tests:
+              - not_null
+              - unique          # no duplicate job_ids allowed in Silver
+
+          - name: canonical_role
+            description: "Normalized role key from RoleMapper (e.g. 'data_engineer')"
+            tests:
+              - not_null
+
+          - name: url
+            description: "Original GetonBoard job URL"
+            tests:
+              - not_null
+              - unique          # each URL should appear exactly once
+
+          - name: extraction_quality_score
+            description: "Confidence score 0.0–1.0 for HTML extraction quality"

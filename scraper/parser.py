@@ -5,12 +5,11 @@ import logging
 import re
 
 from .models import Job
-from .quality import ExtractionMethod, ExtractionConfidenceCalculator
+from .quality import ExtractionMethod
 
 logger = logging.getLogger(__name__)
 
-# Known tech keywords for keyword-based skill extraction from descriptions.
-# Used as fallback when no structured skills section exists in the HTML.
+# Tech keywords for skill extraction
 _TECH_KEYWORDS: list[str] = [
     "python", "sql", "spark", "kafka", "airflow", "dbt", "bigquery",
     "redshift", "snowflake", "databricks", "kubernetes", "docker",
@@ -28,61 +27,95 @@ _TECH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Salary patterns - compiled once, reused
+_SALARY_PATTERNS = [
+    re.compile(r"USD\s*\$?[\d,]+", re.IGNORECASE),
+    re.compile(r"CLP\s*\$?[\d,]+", re.IGNORECASE),
+    re.compile(r"ARS\s*\$?[\d,]+", re.IGNORECASE),
+    re.compile(r"MXN\s*\$?[\d,]+", re.IGNORECASE),
+    re.compile(r"BRL\s*R\$?\s*[\d,]+", re.IGNORECASE),
+    re.compile(r"PEN\s*S/\s*[\d,]+", re.IGNORECASE),
+]
+
 
 def parse_jobs(html: str, search_term: str) -> List[Job]:
     """Extract jobs from search results page"""
     soup = BeautifulSoup(html, "lxml")
     jobs = []
-    job_links = soup.find_all("a", class_="gb-results-list__item")
+    # Updated selector: GetOnBoard changed from gb-results-list__item to results-item
+    job_links = soup.find_all("a", class_="results-item")
 
     for link in job_links:
         try:
-            title_tag = link.find(["h3", "h2"], class_="gb-results-list__title")
+            # Title is in h4 with class results-list-title
+            title_tag = link.find("h4", class_="results-list-title")
             if not title_tag:
                 continue
-            
-            title = title_tag.find("strong").text.strip() if title_tag.find("strong") else title_tag.text.strip()
 
-            info_section = link.find("div", class_="gb-results-list__info")
+            title = title_tag.find("strong")
+            if title:
+                title = title.text.strip()
+            else:
+                title = title_tag.text.strip()
+            title = title.replace("Featured job", "").replace("Empleo destacado", "").strip()
+
+            # Company info is in results-list-info section
+            info_section = link.find("div", class_="results-list-info")
             company = None
             if info_section:
-                company_tag = info_section.find("strong")
-                if company_tag:
-                    company = company_tag.text.strip()
+                strong_tags = info_section.find_all("strong")
+                if len(strong_tags) > 1:
+                    company = strong_tags[1].text.strip()
 
-            location_tag = link.find("span", class_="location")
-            location = location_tag.text.strip() if location_tag else None
+            # Location - look for location text (typically after company)
+            location = None
+            location_parts = []
+            for text in info_section.stripped_strings if info_section else []:
+                if text and not any(x in text.lower() for x in ["part time", "full time", "remote", "featured", "destacado"]):
+                    location_parts.append(text)
+                    if len(location_parts) >= 2:
+                        break
+            location = " ".join(location_parts[-1:]) if location_parts else None
 
-            salary_tag = link.find(string=lambda x: x and any(
-                curr in str(x)
-                for curr in ["USD", "CLP", "ARS", "MXN", "BRL", "PEN", "COP", "mes", "month"]
-            ))
-            salary = salary_tag.strip() if salary_tag else None
+            # Salary - use pre-compiled patterns
+            salary_text = link.get_text()
+            salary = None
+            for pattern in _SALARY_PATTERNS:
+                match = pattern.search(salary_text)
+                if match:
+                    salary = match.group(0)
+                    break
 
-            url = link.get("href")
-            if not url:
+            # Job URL
+            job_url = link.get("href")
+            if not job_url:
                 continue
-            
-            if not url.startswith("http"):
-                url = f"https://www.getonbrd.com{url}"
+
+            # Extract skills from description (fallback keyword matching)
+            description = link.get_text()
+            skills = list(set(_TECH_PATTERN.findall(description)))
 
             job = Job(
                 title=title,
-                company=company or "Unknown",
+                company=company,
                 location=location,
                 salary=salary,
-                url=url,
-                description=None,
+                url=job_url,
+                description=description[:500] if description else None,
                 search_term=search_term,
-                scraped_at=datetime.utcnow()
+                skills=skills,
+                extraction_method=ExtractionMethod.FALLBACK,
+                confidence=0.6,
+                scraped_at=datetime.utcnow(),
             )
-
             jobs.append(job)
+            logger.debug(f"Parsed job: {title} at {company}")
 
         except Exception as e:
-            logger.debug(f"Error parsing job link: {e}")
+            logger.warning(f"Error parsing job link: {e}")
             continue
 
+    logger.info(f"Parsed {len(jobs)} jobs from {search_term}")
     return jobs
 
 

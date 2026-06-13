@@ -1,4 +1,3 @@
-import time
 import logging
 from typing import Optional
 from pathlib import Path
@@ -141,11 +140,10 @@ class GetOnBoardClient:
             for strategy_url in strategy_urls:
                 try:
                     self.driver.get(strategy_url)
-                    time.sleep(1)  # brief pause for JS init before element wait
-
+                    # Wait for results to load instead of sleeping
                     WebDriverWait(self.driver, 10).until(
                         lambda d: len(
-                            d.find_elements(By.CLASS_NAME, "gb-results-list__item")
+                            d.find_elements(By.CLASS_NAME, "results-item")
                         ) > 0
                     )
 
@@ -155,7 +153,7 @@ class GetOnBoardClient:
                     return html
 
                 except Exception as e:
-                    logger.warning(f"Strategy URL failed: {strategy_url}")
+                    logger.warning(f"Strategy URL failed: {strategy_url} ({type(e).__name__})")
                     continue
 
             html = self.driver.page_source
@@ -163,6 +161,9 @@ class GetOnBoardClient:
             return html
 
         except Exception as e:
+            if "invalid session id" in str(e).lower():
+                logger.warning("Invalid session during search - reinitializing driver")
+                self._init_driver()
             self.circuit_breaker.record_failure()
             raise ClientException(f"Failed to search for '{search_term}'", original_error=e)
 
@@ -177,12 +178,9 @@ class GetOnBoardClient:
             logger.debug(f"Fetching job details from: {url}")
             self.driver.get(url)
 
-            try:
-                WebDriverWait(self.driver, settings.timeout).until(
-                    lambda d: len(d.find_elements(By.TAG_NAME, "p")) > 0
-                )
-            except Exception:
-                time.sleep(3)
+            WebDriverWait(self.driver, settings.timeout).until(
+                lambda d: len(d.find_elements(By.TAG_NAME, "p")) > 0
+            )
 
             html = self.driver.page_source
             self.circuit_breaker.record_success()
@@ -194,7 +192,9 @@ class GetOnBoardClient:
                 self._init_driver()
                 try:
                     self.driver.get(url)
-                    time.sleep(3)
+                    WebDriverWait(self.driver, settings.timeout).until(
+                        lambda d: len(d.find_elements(By.TAG_NAME, "p")) > 0
+                    )
                     return self.driver.page_source
                 except Exception as retry_error:
                     self.circuit_breaker.record_failure()
