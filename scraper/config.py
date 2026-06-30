@@ -152,6 +152,10 @@ class ScraperSettings(BaseSettings):
         default=None,
         description="GCP project ID"
     )
+    gcs_bucket: Optional[str] = Field(
+        default=None,
+        description="GCS bucket name for Bronze data"
+    )
     bigquery_dataset: Optional[str] = Field(
         default=None,
         description="BigQuery dataset name"

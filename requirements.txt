@@ -27,11 +27,16 @@ dbt-duckdb==1.7.4
 # protobuf>=5 removed MessageToJson(including_default_value_fields=...) used by dbt 1.7.x
 protobuf>=3.20.3,<5.0.0
 
+# GCP Production
+google-cloud-bigquery==3.20.1
+db-dtypes==1.2.0
+gcsfs==2024.3.1
+
 # MCP Server
 mcp==1.27.0
 
 # AI — Gemini API for intelligent role variant generation (free tier)
-google-generativeai>=0.3.0
+google-genai
 
 # Testing
 pytest==7.4.3

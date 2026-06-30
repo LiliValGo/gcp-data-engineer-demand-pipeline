@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from scraper.config import settings
 from scraper.logging_config import setup_logging
@@ -62,14 +62,31 @@ def main():
 
                 logger.info(f"After deduplication: {len(unique_jobs)} new jobs ({skipped} duplicates)")
 
-                # Process each job
-                for idx, job in enumerate(unique_jobs, 1):
-                    try:
-                        logger.debug(f"[{idx}/{len(unique_jobs)}] Processing: {job.title} @ {job.company}")
+                # Process each job's details concurrently
+                logger.info(f"Fetching details for {len(unique_jobs)} jobs concurrently...")
+                from concurrent.futures import ThreadPoolExecutor, as_completed
 
-                        # Fetch details
-                        job_html = client.get_job_details(job.url)
-                        details = parse_job_details(job_html)
+                def fetch_job_html(j):
+                    try:
+                        html = client.get_job_details(j.url)
+                        return j, html, None
+                    except Exception as err:
+                        return j, None, err
+
+                job_htmls = []
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = {executor.submit(fetch_job_html, job): job for job in unique_jobs}
+                    for future in as_completed(futures):
+                        job_htmls.append(future.result())
+
+                # Process results sequentially to ensure database/logging thread safety
+                for idx, (job, html, err) in enumerate(job_htmls, 1):
+                    try:
+                        logger.debug(f"[{idx}/{len(job_htmls)}] Processing: {job.title} @ {job.company}")
+                        if err:
+                            raise err
+
+                        details = parse_job_details(html)
 
                         # Enrich job with details
                         job.description = details.get("description")
@@ -80,7 +97,7 @@ def main():
                         job.experience_level = details.get("experience_level")
                         job.contract_type = details.get("contract_type")
                         job.job_category = details.get("job_category")
-                        job.processing_timestamp = datetime.utcnow()
+                        job.processing_timestamp = datetime.now(timezone.utc)
 
                         # Validate quality
                         is_valid, errors = validator.validate_record(job.model_dump())
@@ -97,7 +114,6 @@ def main():
                         )
 
                         all_jobs.append(job)
-                        
                         logger.debug(f"Job processed successfully: {job.title}")
 
                     except Exception as e:
@@ -131,7 +147,7 @@ def main():
             source_url="https://www.getonbrd.com/jobs",
             source_type="web_scrape",
             extraction_method="getonboard_scraper_v2",
-            extraction_timestamp=datetime.utcnow().isoformat(),
+            extraction_timestamp=datetime.now(timezone.utc).isoformat(),
             record_count=len(all_jobs),
             schema_version="JobV2",
             data_quality_metrics=quality_report.metrics.__dict__,

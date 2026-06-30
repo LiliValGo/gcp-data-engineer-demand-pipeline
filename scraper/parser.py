@@ -1,11 +1,11 @@
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 import logging
 import re
 
 from .models import Job
-from .quality import ExtractionMethod
+from .quality import ExtractionMethod, ExtractionConfidenceCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def parse_jobs(html: str, search_term: str) -> List[Job]:
                 skills=skills,
                 extraction_method=ExtractionMethod.FALLBACK,
                 confidence=0.6,
-                scraped_at=datetime.utcnow(),
+                scraped_at=datetime.now(timezone.utc),
             )
             jobs.append(job)
             logger.debug(f"Parsed job: {title} at {company}")

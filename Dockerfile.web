@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Install Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code and files
+COPY mcp_server/ ./mcp_server/
+COPY role_mapper/ ./role_mapper/
+COPY scraper/ ./scraper/
+COPY web/ ./web/
+COPY run_mcp.py .
+COPY run_web.py .
+
+EXPOSE 8080
+
+# Default command: run FastAPI web explorer
+CMD ["python", "run_web.py"]

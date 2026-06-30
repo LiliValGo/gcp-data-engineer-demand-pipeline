@@ -34,5 +34,13 @@ logging.getLogger("scraper").addHandler(logging.StreamHandler(sys.stderr))
 
 from mcp_server.server import mcp  # noqa: E402 — import after logging setup
 
+import os
+
 if __name__ == "__main__":
-    mcp.run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    if transport == "sse":
+        port = int(os.getenv("PORT", "8080"))
+        logger.warning(f"Starting MCP server on SSE transport on port {port}...")
+        mcp.run(transport="sse", host="0.0.0.0", port=port)
+    else:
+        mcp.run(transport="stdio")

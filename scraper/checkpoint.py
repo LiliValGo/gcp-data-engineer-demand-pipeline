@@ -4,7 +4,7 @@ import duckdb
 import json
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from .exceptions import CheckpointException
@@ -121,7 +121,7 @@ class ScrapingCheckpoint:
                     url,
                     search_term,
                     role,
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     extraction_method,
                     confidence_score,
                     metadata_json,
@@ -209,11 +209,22 @@ class ScrapingCheckpoint:
         urls: List[str],
     ) -> List[str]:
         """Filter out URLs that have already been processed"""
-        unprocessed = []
-        for url in urls:
-            if not self.is_processed(url):
-                unprocessed.append(url)
-        return unprocessed
+        if not urls:
+            return []
+        try:
+            placeholders = ", ".join(["?"] * len(urls))
+            query = f"SELECT url FROM processed_urls WHERE status = 'success' AND url IN ({placeholders})"
+            results = self.conn.execute(query, urls).fetchall()
+            processed_urls = {row[0] for row in results}
+            return [url for url in urls if url not in processed_urls]
+        except duckdb.Error as e:
+            logger.error(f"Error filtering unprocessed URLs: {e}")
+            unprocessed = []
+            for url in urls:
+                if not self.is_processed(url):
+                    unprocessed.append(url)
+            return unprocessed
+
 
     def reset(self, role: Optional[str] = None) -> None:
         """

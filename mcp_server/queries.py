@@ -56,15 +56,15 @@ def get_available_roles() -> list[dict]:
     Queries silver.jobs directly so the result reflects the full
     deduplicated dataset, not just what made it into Gold aggregations.
     """
-    conn = get_pipeline().conn
-    df = conn.execute("""
+    pipeline = get_pipeline()
+    df = pipeline.query("""
         SELECT
             canonical_role,
             COUNT(*) AS total_jobs
         FROM silver.jobs
         GROUP BY canonical_role
         ORDER BY total_jobs DESC
-    """).df()
+    """)
     return df.to_dict(orient="records")
 
 
@@ -79,8 +79,8 @@ def get_top_skills(role: str, limit: int = 20) -> list[dict]:
     Column 'pct' is the percentage of jobs for that role that mention the skill.
     Uses parameterized query to prevent SQL injection.
     """
-    conn = get_pipeline().conn
-    df = conn.execute(
+    pipeline = get_pipeline()
+    df = pipeline.query(
         """
         SELECT
             skill,
@@ -92,7 +92,7 @@ def get_top_skills(role: str, limit: int = 20) -> list[dict]:
         LIMIT ?
         """,
         [role, limit],
-    ).df()
+    )
     return df.to_dict(orient="records")
 
 
@@ -106,11 +106,11 @@ def get_demand_trends(role: str) -> list[dict]:
 
     Returns date as ISO string (YYYY-MM-DD) so it is directly JSON-serialisable.
     """
-    conn = get_pipeline().conn
-    df = conn.execute(
+    pipeline = get_pipeline()
+    df = pipeline.query(
         """
         SELECT
-            CAST(date AS VARCHAR)  AS date,
+            CAST(date AS STRING)  AS date,
             job_count,
             unique_companies
         FROM gold.demand_by_role
@@ -119,7 +119,7 @@ def get_demand_trends(role: str) -> list[dict]:
         LIMIT 30
         """,
         [role],
-    ).df()
+    )
     return df.to_dict(orient="records")
 
 
@@ -134,10 +134,10 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
     Columns: city, jobs_with_salary, min_salary_usd, avg_min_salary_usd,
              avg_max_salary_usd, max_salary_usd, median_min_usd.
     """
-    conn = get_pipeline().conn
+    pipeline = get_pipeline()
 
     if city:
-        df = conn.execute(
+        df = pipeline.query(
             """
             SELECT
                 city,
@@ -153,9 +153,9 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
             ORDER BY jobs_with_salary DESC
             """,
             [role, city],
-        ).df()
+        )
     else:
-        df = conn.execute(
+        df = pipeline.query(
             """
             SELECT
                 city,
@@ -170,7 +170,7 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
             ORDER BY jobs_with_salary DESC
             """,
             [role],
-        ).df()
+        )
 
     return df.to_dict(orient="records")
 

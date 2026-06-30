@@ -14,7 +14,7 @@ from tenacity import (
     retry_if_exception_type,
     before_sleep_log,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .config import settings
 from .search_strategy import get_strategy_urls
@@ -36,7 +36,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         """Record a failure"""
         self.failure_count += 1
-        self.last_failure_time = datetime.utcnow()
+        self.last_failure_time = datetime.now(timezone.utc)
         if self.failure_count >= self.failure_threshold:
             self.state = "open"
             logger.error(
@@ -47,7 +47,7 @@ class CircuitBreaker:
     def is_open(self) -> bool:
         """Check if circuit breaker is open"""
         if self.state == "open":
-            elapsed = (datetime.utcnow() - self.last_failure_time).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - self.last_failure_time).total_seconds()
             if elapsed > self.timeout_seconds:
                 self.state = "half-open"
                 self.failure_count = 0
@@ -90,8 +90,10 @@ class GetOnBoardClient:
             # Try known system paths first, fallback to webdriver-manager
             chromedriver_path = None
             manual_paths = [
+                "/usr/bin/chromedriver",
                 "/usr/local/bin/chromedriver",
                 "/opt/homebrew/bin/chromedriver",
+                "/usr/lib/chromium-browser/chromedriver",
             ]
 
             for path in manual_paths:
@@ -173,35 +175,28 @@ class GetOnBoardClient:
         retry=retry_if_exception_type(ClientException),
     )
     def get_job_details(self, url: str) -> str:
-        """Fetch job details from a specific job posting URL"""
+        """Fetch job details from a specific job posting URL via HTTP request"""
+        if self.circuit_breaker.is_open():
+            raise ClientException("Circuit breaker is open - backing off")
+
         try:
             logger.debug(f"Fetching job details from: {url}")
-            self.driver.get(url)
+            headers = {"User-Agent": settings.user_agent}
+            import httpx
+            response = httpx.get(url, headers=headers, timeout=settings.timeout, follow_redirects=True)
 
-            WebDriverWait(self.driver, settings.timeout).until(
-                lambda d: len(d.find_elements(By.TAG_NAME, "p")) > 0
-            )
+            if response.status_code != 200:
+                self.circuit_breaker.record_failure()
+                raise ClientException(f"Failed to fetch job details (status {response.status_code})", url=url)
 
-            html = self.driver.page_source
             self.circuit_breaker.record_success()
-            return html
+            return response.text
 
         except Exception as e:
-            if "invalid session id" in str(e).lower():
-                logger.warning(f"Invalid session - reinitializing driver")
-                self._init_driver()
-                try:
-                    self.driver.get(url)
-                    WebDriverWait(self.driver, settings.timeout).until(
-                        lambda d: len(d.find_elements(By.TAG_NAME, "p")) > 0
-                    )
-                    return self.driver.page_source
-                except Exception as retry_error:
-                    self.circuit_breaker.record_failure()
-                    raise ClientException(f"Failed to fetch details", url=url, original_error=retry_error)
-            else:
-                self.circuit_breaker.record_failure()
-                raise ClientException(f"Failed to fetch job details", url=url, original_error=e)
+            self.circuit_breaker.record_failure()
+            if isinstance(e, ClientException):
+                raise
+            raise ClientException(f"Failed to fetch job details", url=url, original_error=e)
 
     def close(self) -> None:
         """Close the WebDriver gracefully"""

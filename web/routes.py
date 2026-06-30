@@ -64,7 +64,7 @@ async def search_role(query: str, request: Request):
             variants = role_data["variants"]
             related = []
             role_key = role_data["role_key"]
-            source = "gemini_generated" if role_mapper.gemini_model else "template_generated"
+            source = "gemini_generated" if role_mapper.gemini_client else "template_generated"
         else:
             return {
                 "query": query,
@@ -148,7 +148,7 @@ def _run_scrape(job_id: str, role_key: str, variants: List[str], jobs: dict) -> 
     The scraper imports are heavy (Selenium, pandas, DuckDB). Keeping them
     here avoids loading them at web-server startup when no scraping is needed.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from scraper.client import GetOnBoardClient
     from scraper.exporter import DatasetLineage, export_jobs
@@ -177,7 +177,7 @@ def _run_scrape(job_id: str, role_key: str, variants: List[str], jobs: dict) -> 
                 source_url="https://www.getonbrd.com/jobs",
                 source_type="web_scrape",
                 extraction_method="getonboard_scraper_v2",
-                extraction_timestamp=datetime.utcnow().isoformat(),
+                extraction_timestamp=datetime.now(timezone.utc).isoformat(),
                 record_count=len(all_jobs),
                 schema_version="JobV2",
                 data_quality_metrics={},

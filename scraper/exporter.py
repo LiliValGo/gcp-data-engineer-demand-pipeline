@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from dataclasses import asdict, dataclass
 
@@ -41,13 +41,19 @@ def export_jobs(
     Returns:
         Path to exported parquet file
     """
-    base_dir = Path("data/bronze") / f"role={role}"
-    base_dir.mkdir(parents=True, exist_ok=True)
+    from .config import settings
 
     # Timestamped filename for immutability - each run creates a new file
     timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    parquet_file = base_dir / f"{timestamp}__v2.parquet"
-    metadata_file = base_dir / f"{timestamp}__v2.metadata.json"
+
+    if settings.gcs_bucket:
+        parquet_file = f"gs://{settings.gcs_bucket}/bronze/role={role}/{timestamp}__v2.parquet"
+        metadata_file = f"gs://{settings.gcs_bucket}/bronze/role={role}/{timestamp}__v2.metadata.json"
+    else:
+        base_dir = Path("data/bronze") / f"role={role}"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        parquet_file = str(base_dir / f"{timestamp}__v2.parquet")
+        metadata_file = str(base_dir / f"{timestamp}__v2.metadata.json")
 
     # Create default lineage if not provided
     if not lineage:
@@ -55,7 +61,7 @@ def export_jobs(
             source_url="https://www.getonbrd.com/jobs",
             source_type="web_scrape",
             extraction_method="getonboard_scraper_v2",
-            extraction_timestamp=datetime.utcnow().isoformat(),
+            extraction_timestamp=datetime.now(timezone.utc).isoformat(),
             record_count=len(jobs),
             schema_version="JobV2",
             data_quality_metrics={
@@ -86,29 +92,36 @@ def export_jobs(
         metadata = {
             "_metadata": {
                 "schema_version": 2,
-                "export_timestamp": datetime.utcnow().isoformat(),
+                "export_timestamp": datetime.now(timezone.utc).isoformat(),
                 "total_records": len(jobs),
                 "role": role,
                 "lineage": asdict(lineage),
             }
         }
 
-        with open(metadata_file, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        if settings.gcs_bucket:
+            import gcsfs
+            fs = gcsfs.GCSFileSystem()
+            with fs.open(metadata_file, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            file_size = fs.info(parquet_file)["size"]
+        else:
+            with open(metadata_file, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            file_size = Path(parquet_file).stat().st_size
 
-        file_size = parquet_file.stat().st_size
         logger.info(
             "jobs_exported",
             extra={
                 "extra_data": {
-                    "parquet_path": str(parquet_file),
-                    "metadata_path": str(metadata_file),
+                    "parquet_path": parquet_file,
+                    "metadata_path": metadata_file,
                     "count": len(jobs),
                     "size_bytes": file_size
                 }
             }
         )
-        return str(parquet_file)
+        return parquet_file
 
     except Exception as e:
         logger.error(f"Failed to export jobs: {e}", exc_info=True)

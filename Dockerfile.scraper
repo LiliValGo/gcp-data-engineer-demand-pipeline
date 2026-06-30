@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+
+# Install system dependencies for Chromium & Selenium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
+    libgconf-2-4 \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    SE_OFFLINE=true \
+    PATH="/usr/bin:${PATH}"
+
+WORKDIR /app
+
+# Install Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code and files
+COPY role_mapper/ ./role_mapper/
+COPY scraper/ ./scraper/
+COPY transform/ ./transform/
+COPY main_scraper.py .
+COPY run_pipeline.sh .
+
+# Ensure scraper runs in headless mode
+ENV HEADLESS=true
+
+ENTRYPOINT ["./run_pipeline.sh"]

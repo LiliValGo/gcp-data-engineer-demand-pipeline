@@ -20,17 +20,18 @@ import hashlib
 import logging
 from pathlib import Path
 from typing import Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 import duckdb
 import pandas as pd
+import httpx
 
 from role_mapper.role_mapper import RoleMapper
 
 logger = logging.getLogger(__name__)
 
-# Exchange rates to USD (approximate, May 2026)
-_FX_TO_USD = {
+# Exchange rates fallback to USD (approximate, May 2026)
+_FX_FALLBACK = {
     "USD": 1.0,
     "CLP": 0.00106,  # Chilean Peso (~945 CLP/USD)
     "ARS": 0.001,    # Argentine Peso (~1000 ARS/USD, official rate)
@@ -39,6 +40,34 @@ _FX_TO_USD = {
     "BRL": 0.178,    # Brazilian Real (~5.6 BRL/USD)
     "PEN": 0.267,    # Peruvian Sol (~3.74 PEN/USD)
 }
+
+
+def _fetch_fx_rates() -> dict:
+    """Fetch latest exchange rates to USD from frankfurter.app API with fallback."""
+    try:
+        response = httpx.get(
+            "https://api.frankfurter.app/latest?from=USD&to=CLP,ARS,MXN,COP,BRL,PEN",
+            timeout=5.0
+        )
+        if response.status_code == 200:
+            data = response.json()
+            rates = data.get("rates", {})
+            fx_to_usd = {"USD": 1.0}
+            for currency, rate in rates.items():
+                if rate > 0:
+                    fx_to_usd[currency] = round(1.0 / rate, 6)
+            
+            # Keep fallback for anything missing
+            for curr, val in _FX_FALLBACK.items():
+                if curr not in fx_to_usd:
+                    fx_to_usd[curr] = val
+                    
+            logger.info(f"Successfully fetched live exchange rates: {fx_to_usd}")
+            return fx_to_usd
+    except Exception as e:
+        logger.warning(f"Failed to fetch live FX rates, using local fallback: {e}")
+        
+    return _FX_FALLBACK
 
 # Salary pattern: captures optional currency, numbers (with . or , separators)
 # Examples matched: "USD 100,000", "USD 3.500", "ARS 80.000 - 120.000", "200"
@@ -78,9 +107,20 @@ class MedallionPipeline:
         role_mapper_config: str = "role_mapper/config/roles.yaml",
         read_only: bool = False,
     ):
+        from .config import settings
+        self.is_gcs = False
+        if settings.gcs_bucket:
+            self.bronze_root_str = f"gs://{settings.gcs_bucket}/bronze"
+            self.is_gcs = True
+        elif str(bronze_root).startswith("gs://"):
+            self.bronze_root_str = str(bronze_root)
+            self.is_gcs = True
+        else:
+            self.bronze_root_str = str(bronze_root)
+
         self.duckdb_path = Path(duckdb_path)
         self.bronze_root = Path(bronze_root)
-        if not read_only:
+        if not self.is_gcs and not read_only:
             self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.conn = duckdb.connect(str(self.duckdb_path), read_only=read_only)
@@ -95,7 +135,9 @@ class MedallionPipeline:
             logger.warning(f"RoleMapper not available: {e} — canonical_role will use search_term as fallback")
             self._role_mapper = None
 
-        logger.info(f"MedallionPipeline initialized — warehouse: {self.duckdb_path}")
+        self.fx_rates = _fetch_fx_rates()
+
+        logger.info(f"MedallionPipeline initialized — warehouse: {self.duckdb_path} (is_gcs: {self.is_gcs})")
 
     # ------------------------------------------------------------------
     # Internal: Schema + Table setup
@@ -169,7 +211,7 @@ class MedallionPipeline:
 
         try:
             currency = (match.group("currency") or "USD").upper()
-            fx = _FX_TO_USD.get(currency, 1.0)
+            fx = self.fx_rates.get(currency, 1.0)
             period = (match.group("period") or "").lower()
 
             # Clean number: remove all non-digit characters
@@ -274,27 +316,52 @@ class MedallionPipeline:
         the latest data per URL without duplicating records. ON CONFLICT
         (url deduplication) ensures idempotency.
         """
-        parquet_files = list(self.bronze_root.rglob("*.parquet"))
+        if self.is_gcs:
+            import gcsfs
+            fs = gcsfs.GCSFileSystem()
+            path_str = self.bronze_root_str.replace("gs://", "")
+            all_files = fs.glob(f"{path_str}/**/*.parquet")
+            parquet_files = [f"gs://{f}" for f in all_files]
+        else:
+            parquet_files = list(self.bronze_root.rglob("*.parquet"))
 
         if not parquet_files:
-            logger.warning(f"No Bronze parquet files found in {self.bronze_root}")
+            logger.warning(f"No Bronze parquet files found in {self.bronze_root_str}")
             return 0
 
         # --- Incremental load: skip files already ingested into Silver ---
         # Avoids reloading all historical Parquet files on every pipeline run.
         try:
-            processed_paths = set(
-                self.conn.execute(
-                    "SELECT DISTINCT bronze_file_path FROM silver.jobs WHERE bronze_file_path IS NOT NULL"
-                ).fetchdf()["bronze_file_path"].tolist()
-            )
+            if self.is_gcs:
+                from google.cloud import bigquery
+                from scraper.config import settings
+                bq_client = bigquery.Client()
+                query = f"SELECT DISTINCT bronze_file_path FROM `{settings.gcp_project}.silver.jobs` WHERE bronze_file_path IS NOT NULL"
+                query_job = bq_client.query(query)
+                processed_paths = set(row.bronze_file_path for row in query_job.result())
+            else:
+                processed_paths = set(
+                    self.conn.execute(
+                        "SELECT DISTINCT bronze_file_path FROM silver.jobs WHERE bronze_file_path IS NOT NULL"
+                    ).fetchdf()["bronze_file_path"].tolist()
+                )
         except Exception:
             processed_paths = set()
 
         new_files = [fp for fp in parquet_files if str(fp) not in processed_paths]
 
         if not new_files:
-            count = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
+            if self.is_gcs:
+                from google.cloud import bigquery
+                from scraper.config import settings
+                bq_client = bigquery.Client()
+                try:
+                    query = f"SELECT COUNT(*) as count FROM `{settings.gcp_project}.silver.jobs`"
+                    count = list(bq_client.query(query).result())[0].count
+                except Exception:
+                    count = 0
+            else:
+                count = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
             logger.info(f"No new Bronze files to process — Silver already up to date ({count} rows)")
             return count
 
@@ -310,46 +377,43 @@ class MedallionPipeline:
         raw_df = pd.concat(frames, ignore_index=True)
         logger.info(f"Bronze: {len(raw_df)} total rows before deduplication")
 
-        # --- Step 2: Apply Python transformations row-by-row ---
-        records = []
-        for _, row in raw_df.iterrows():
-            url = str(row.get("url", "")) or ""
-            if not url:
-                continue
-
-            sal_min, sal_max = self._parse_salary(row.get("salary"))
-            city, is_remote = self._parse_location(row.get("location"))
-            canonical_role = self._get_canonical_role(row.get("search_term"))
-
-            records.append({
-                "job_id":        self._make_job_id(url),
-                "url":           url,
-                "title":         row.get("title"),
-                "company":       row.get("company"),
-                "canonical_role": canonical_role,
-                "search_term":   row.get("search_term"),
-                "location":      row.get("location"),
-                "city":          city,
-                "is_remote":     is_remote,
-                "salary_raw":    row.get("salary"),
-                "salary_usd_min": sal_min,
-                "salary_usd_max": sal_max,
-                "description":   row.get("description"),
-                "skills":        row.get("skills"),
-                "experience_level": row.get("experience_level"),
-                "contract_type": row.get("contract_type"),
-                "job_category":  row.get("job_category"),
-                "extraction_quality_score": row.get("extraction_quality_score"),
-                "scraped_at":    row.get("scraped_at"),
-                "processing_timestamp": datetime.utcnow().isoformat(),
-                "bronze_file_path": row.get("_bronze_file_path"),
-            })
-
-        if not records:
-            logger.warning("No valid records after transformation")
+        # --- Step 2: Apply Python transformations via apply/vectorized operations ---
+        raw_df = raw_df[raw_df["url"].fillna("").str.strip() != ""].copy()
+        if raw_df.empty:
+            logger.warning("No valid records after filtering empty URLs")
             return 0
 
-        silver_df = pd.DataFrame(records)
+        raw_df["job_id"] = raw_df["url"].apply(self._make_job_id)
+        
+        parsed_salaries = raw_df["salary"].apply(self._parse_salary)
+        raw_df["salary_usd_min"] = parsed_salaries.apply(lambda x: x[0])
+        raw_df["salary_usd_max"] = parsed_salaries.apply(lambda x: x[1])
+
+        parsed_locations = raw_df["location"].apply(self._parse_location)
+        raw_df["city"] = parsed_locations.apply(lambda x: x[0])
+        raw_df["is_remote"] = parsed_locations.apply(lambda x: x[1])
+
+        raw_df["canonical_role"] = raw_df["search_term"].apply(self._get_canonical_role)
+        raw_df["salary_raw"] = raw_df["salary"]
+        raw_df["processing_timestamp"] = datetime.now(timezone.utc).isoformat()
+        
+        # Ensure all required columns exist in raw_df, fill with None if missing
+        required_cols = [
+            "job_id", "url", "title", "company", "canonical_role", "search_term",
+            "location", "city", "is_remote", "salary_raw", "salary_usd_min",
+            "salary_usd_max", "description", "skills", "experience_level",
+            "contract_type", "job_category", "extraction_quality_score",
+            "scraped_at", "processing_timestamp", "bronze_file_path"
+        ]
+        
+        if "_bronze_file_path" in raw_df.columns:
+            raw_df = raw_df.rename(columns={"_bronze_file_path": "bronze_file_path"})
+            
+        for col in required_cols:
+            if col not in raw_df.columns:
+                raw_df[col] = None
+
+        silver_df = raw_df[required_cols].copy()
 
         # --- Step 3: Deduplicate — keep latest scraped_at per URL ---
         # This mirrors the BigQuery pattern:
@@ -361,31 +425,64 @@ class MedallionPipeline:
         )
         silver_df = silver_df[silver_df["_rn"] == 0].drop(columns=["_rn"])
 
-        # --- Step 4: Upsert into DuckDB silver.jobs ---
-        # Register the DataFrame as a temporary DuckDB view, then INSERT
-        # with ON CONFLICT. This is the DuckDB equivalent of BigQuery's MERGE.
-        self.conn.register("_silver_staging", silver_df)
+        # --- Step 4: Upsert into DuckDB or BigQuery silver.jobs ---
+        if self.is_gcs:
+            from google.cloud import bigquery
+            from scraper.config import settings
+            bq_client = bigquery.Client()
+            
+            dataset_ref = bigquery.DatasetReference(settings.gcp_project, "silver")
+            bq_client.create_dataset(dataset_ref, exists_ok=True)
+            
+            staging_table_id = f"{settings.gcp_project}.silver.jobs_staging"
+            dest_table_id = f"{settings.gcp_project}.silver.jobs"
+            
+            job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+            job = bq_client.load_table_from_dataframe(silver_df, staging_table_id, job_config=job_config)
+            job.result()
+            
+            try:
+                bq_client.get_table(dest_table_id)
+                dml = f"""
+                    BEGIN TRANSACTION;
+                    DELETE FROM `{dest_table_id}` WHERE job_id IN (SELECT job_id FROM `{staging_table_id}`);
+                    INSERT INTO `{dest_table_id}` SELECT * FROM `{staging_table_id}`;
+                    DROP TABLE `{staging_table_id}`;
+                    COMMIT TRANSACTION;
+                """
+                bq_client.query(dml).result()
+            except Exception:
+                job_config = bigquery.LoadJobConfig(write_disposition="WRITE_EMPTY")
+                bq_client.load_table_from_dataframe(silver_df, dest_table_id, job_config=job_config).result()
+                bq_client.delete_table(staging_table_id, not_found_ok=True)
+                
+            query = f"SELECT COUNT(*) as count FROM `{dest_table_id}`"
+            count = list(bq_client.query(query).result())[0].count
+            logger.info(f"Silver (BigQuery): {count} total rows in silver.jobs after upsert")
+            return count
+        else:
+            self.conn.register("_silver_staging", silver_df)
 
-        self.conn.execute("""
-            DELETE FROM silver.jobs WHERE job_id IN (SELECT job_id FROM _silver_staging);
+            self.conn.execute("""
+                DELETE FROM silver.jobs WHERE job_id IN (SELECT job_id FROM _silver_staging);
 
-            INSERT INTO silver.jobs
-            SELECT
-                job_id, url, title, company, canonical_role, search_term,
-                location, city, is_remote, salary_raw, salary_usd_min,
-                salary_usd_max, description, skills, experience_level,
-                contract_type, job_category, extraction_quality_score,
-                TRY_CAST(scraped_at AS TIMESTAMP),
-                TRY_CAST(processing_timestamp AS TIMESTAMP),
-                bronze_file_path
-            FROM _silver_staging
-        """)
+                INSERT INTO silver.jobs
+                SELECT
+                    job_id, url, title, company, canonical_role, search_term,
+                    location, city, is_remote, salary_raw, salary_usd_min,
+                    salary_usd_max, description, skills, experience_level,
+                    contract_type, job_category, extraction_quality_score,
+                    TRY_CAST(scraped_at AS TIMESTAMP),
+                    TRY_CAST(processing_timestamp AS TIMESTAMP),
+                    bronze_file_path
+                FROM _silver_staging
+            """)
 
-        self.conn.unregister("_silver_staging")
+            self.conn.unregister("_silver_staging")
 
-        count = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
-        logger.info(f"Silver: {count} total rows in silver.jobs after upsert")
-        return count
+            count = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
+            logger.info(f"Silver: {count} total rows in silver.jobs after upsert")
+            return count
 
     # ------------------------------------------------------------------
     # Silver → Gold
@@ -497,27 +594,57 @@ class MedallionPipeline:
         the future CLI command.
         """
         logger.info("=== Medallion Pipeline started ===")
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
 
         silver_rows = self.run_bronze_to_silver()
         if silver_rows > 0:
-            self.run_silver_to_gold()
+            if self.is_gcs:
+                logger.info("Running dbt on BigQuery for Gold layer...")
+                import subprocess
+                try:
+                    res = subprocess.run(
+                        ["dbt", "run", "--target", "prod"],
+                        cwd="transform",
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    logger.info(f"dbt run succeeded:\n{res.stdout}")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"dbt run failed:\n{e.stderr}\n{e.stdout}")
+                    raise
+            else:
+                self.run_silver_to_gold()
 
-        elapsed = (datetime.utcnow() - start).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         logger.info(f"=== Medallion Pipeline finished in {elapsed:.1f}s ===")
 
     # ------------------------------------------------------------------
     # Introspection helpers (used by tests and the MCP server)
     # ------------------------------------------------------------------
 
-    def query(self, sql: str) -> pd.DataFrame:
+    def query(self, sql: str, params: list = None) -> pd.DataFrame:
         """
         Execute a SQL query and return a pandas DataFrame.
-
-        Bridge between the local DuckDB warehouse and the MCP Server —
-        MCP tools call pipeline.query(sql) and return the result to Claude.
+        Works for both DuckDB locally and BigQuery in production.
         """
-        return self.conn.execute(sql).df()
+        if self.is_gcs:
+            from google.cloud.bigquery import dbapi
+            # Use BigQuery DB-API connection
+            conn = dbapi.connect()
+            cursor = conn.cursor()
+            if params:
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(sql)
+            # Fetch results into DataFrame
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+            data = cursor.fetchall()
+            return pd.DataFrame(data, columns=columns)
+        else:
+            if params:
+                return self.conn.execute(sql, params).df()
+            return self.conn.execute(sql).df()
 
     def get_gold_summary(self) -> dict:
         """Return row counts for all Gold tables as a health-check dict."""

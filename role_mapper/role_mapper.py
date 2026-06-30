@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from difflib import SequenceMatcher
 
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,10 @@ class RoleMapper:
 
         # Initialize Gemini client for AI-powered variant generation
         self.google_api_key = google_api_key
-        self.gemini_model = None
+        self.gemini_client = None
         if google_api_key:
             try:
-                genai.configure(api_key=google_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                self.gemini_client = genai.Client(api_key=google_api_key)
                 logger.info("Gemini API client initialized for AI variant generation")
             except Exception as e:
                 logger.warning(f"Failed to initialize Gemini client: {e} — will fall back to templates")
@@ -222,8 +221,8 @@ class RoleMapper:
             logger.debug(f"Using cached variants for '{query}'")
             return cached
 
-        # If no Gemini model, fall back to template-based generation
-        if not self.gemini_model:
+        # If no Gemini client, fall back to template-based generation
+        if not self.gemini_client:
             logger.debug(f"Gemini not available, using template-based variants for '{query}'")
             return self._generate_variants_template_fallback(query)
 
@@ -252,7 +251,10 @@ Ensure:
 - Include both singular and with suffixes (engineer, developer, specialist, etc)
 - Skills are realistic for someone searching job listings"""
 
-            response = self.gemini_model.generate_content(prompt)
+            response = self.gemini_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+            )
             response_text = response.text.strip()
 
             # Parse JSON response
