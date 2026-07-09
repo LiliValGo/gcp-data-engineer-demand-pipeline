@@ -2,7 +2,7 @@
 Seed demo data into data/pipeline.duckdb so the MCP tools return real results.
 
 Run once:
-    python seed_demo_data.py
+    python scripts/seed_demo_data.py
 
 This does NOT scrape the web — it inserts a handful of realistic job rows
 straight into silver.jobs, then builds the Gold layer from them.
@@ -134,52 +134,6 @@ DEMO_JOBS = [
         "processing_timestamp": datetime(2026, 4, 20, 0, 0, 0),
         "bronze_file_path": "demo",
     },
-    {
-        "job_id": "demo_da_001",
-        "url": "https://getonbrd.com/jobs/demo-da-001",
-        "title": "Data Analyst",
-        "company": "RetailCo",
-        "canonical_role": "data_analyst",
-        "search_term": "data analyst",
-        "location": "Santiago, Chile",
-        "city": "Santiago",
-        "is_remote": False,
-        "salary_raw": "USD 50,000 - 70,000",
-        "salary_usd_min": 50000.0,
-        "salary_usd_max": 70000.0,
-        "description": "Analyse sales data and produce dashboards.",
-        "skills": ["sql", "tableau", "excel", "python"],
-        "experience_level": "mid",
-        "contract_type": "full-time",
-        "job_category": "Data",
-        "extraction_quality_score": 0.82,
-        "scraped_at": datetime(2026, 4, 15, 10, 0, 0),
-        "processing_timestamp": datetime(2026, 4, 20, 0, 0, 0),
-        "bronze_file_path": "demo",
-    },
-    {
-        "job_id": "demo_da_002",
-        "url": "https://getonbrd.com/jobs/demo-da-002",
-        "title": "Senior Data Analyst",
-        "company": "FinanceCo",
-        "canonical_role": "data_analyst",
-        "search_term": "data analyst",
-        "location": "Santiago, Chile",
-        "city": "Santiago",
-        "is_remote": False,
-        "salary_raw": "USD 65,000 - 90,000",
-        "salary_usd_min": 65000.0,
-        "salary_usd_max": 90000.0,
-        "description": "Model financial risk using data.",
-        "skills": ["sql", "power bi", "python", "excel", "r"],
-        "experience_level": "senior",
-        "contract_type": "full-time",
-        "job_category": "Data",
-        "extraction_quality_score": 0.87,
-        "scraped_at": datetime(2026, 4, 16, 10, 0, 0),
-        "processing_timestamp": datetime(2026, 4, 20, 0, 0, 0),
-        "bronze_file_path": "demo",
-    },
 ]
 
 
@@ -206,6 +160,7 @@ def main():
                 bronze_file_path
             FROM _demo
         """)
+        conn.conn.commit() if hasattr(conn, 'conn') and hasattr(conn.conn, 'commit') else None
         conn.unregister("_demo")
         print(f"Inserted {len(DEMO_JOBS)} demo rows into silver.jobs.")
 

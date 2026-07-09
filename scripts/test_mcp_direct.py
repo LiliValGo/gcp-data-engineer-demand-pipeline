@@ -46,28 +46,36 @@ def extract_result(resp: dict):
     sc = result.get("structuredContent")
     if sc is not None and "result" in sc:
         return sc["result"]
-    # Old format: content[0]["text"]  (JSON-encoded string)
+    # Old format: content[0]["text"]
     content = result.get("content", [])
     if content and content[0].get("text"):
-        return json.loads(content[0]["text"])
+        text_val = content[0]["text"]
+        try:
+            return json.loads(text_val)
+        except json.JSONDecodeError:
+            return text_val
     return None
 
 
-def call_tool(proc, call_id: int, tool_name: str, arguments: dict):
+def call_tool(proc, call_id: int, tool_name: str, arguments: dict, timeout: float = 10.0):
     send(proc, {
         "jsonrpc": "2.0",
         "id": call_id,
         "method": "tools/call",
         "params": {"name": tool_name, "arguments": arguments},
     })
-    resp = recv(proc)
+    resp = recv(proc, timeout=timeout)
     return extract_result(resp), resp
 
 
 def main() -> None:
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    mcp_script = os.path.abspath(os.path.join(script_dir, "..", "run_mcp.py"))
+    
     print("Starting MCP server subprocess...")
     proc = subprocess.Popen(
-        [sys.executable, "run_mcp.py"],
+        [sys.executable, mcp_script],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -78,7 +86,7 @@ def main() -> None:
     time.sleep(1.5)  # give the server a moment to boot
 
     # ── 1. Handshake ────────────────────────────────────────────────────────
-    print("\n[1/6] initialize handshake")
+    print("\n[1/7] initialize handshake")
     send(proc, {
         "jsonrpc": "2.0",
         "id": 1,
@@ -102,14 +110,14 @@ def main() -> None:
     send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
 
     # ── 2. List tools ────────────────────────────────────────────────────────
-    print("\n[2/6] tools/list")
+    print("\n[2/7] tools/list")
     send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     tools_resp = recv(proc)
     tools = tools_resp.get("result", {}).get("tools", []) if tools_resp else []
     print(f"  tools registered: {[t['name'] for t in tools]}")
 
     # ── 3. get_available_roles ───────────────────────────────────────────────
-    print("\n[3/6] get_available_roles")
+    print("\n[3/7] get_available_roles")
     result, raw = call_tool(proc, 3, "get_available_roles", {})
     if result:
         for r in result:
@@ -118,7 +126,7 @@ def main() -> None:
         print("  (empty — no data in DB yet)")
 
     # ── 4. get_top_skills ────────────────────────────────────────────────────
-    print("\n[4/6] get_top_skills  role=data_engineer  limit=5")
+    print("\n[4/7] get_top_skills  role=data_engineer  limit=5")
     result, raw = call_tool(proc, 4, "get_top_skills", {"role": "data_engineer", "limit": 5})
     if result:
         for s in result:
@@ -127,7 +135,7 @@ def main() -> None:
         print("  (empty — no data for data_engineer yet)")
 
     # ── 5. get_demand_trends ─────────────────────────────────────────────────
-    print("\n[5/6] get_demand_trends  role=data_engineer")
+    print("\n[5/7] get_demand_trends  role=data_engineer")
     result, raw = call_tool(proc, 5, "get_demand_trends", {"role": "data_engineer"})
     if result:
         for t in result[:3]:
@@ -138,7 +146,7 @@ def main() -> None:
         print("  (empty — no demand data yet)")
 
     # ── 6. compare_skills ────────────────────────────────────────────────────
-    print("\n[6/6] compare_skills  role=data_engineer")
+    print("\n[6/7] compare_skills  role=data_engineer")
     sample_cv = ["Python", "SQL", "Spark", "Excel", "Tableau"]
     result, raw = call_tool(proc, 6, "compare_skills", {"cv_skills": sample_cv, "role": "data_engineer"})
     if result is not None:
@@ -149,6 +157,28 @@ def main() -> None:
         print(f"  market_coverage_pct : {result.get('market_coverage_pct')}%")
     else:
         print(f"  (no result — raw response: {raw})")
+
+    # ── 7. search_and_scrape_role ────────────────────────────────────────────
+    print("\n[7/7] search_and_scrape_role  role=data engineer")
+    result, raw = call_tool(proc, 7, "search_and_scrape_role", {"role": "data engineer"}, timeout=40.0)
+    if result is not None:
+        print("  Scraping results returned successfully:")
+        print(f"  {result[:200]}...")
+    else:
+        print(f"  (no result — raw response: {raw})")
+        # Try to read stderr from the subprocess to check for errors
+        try:
+            import os
+            import fcntl
+            # Set non-blocking on stderr
+            fd = proc.stderr.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            err_data = proc.stderr.read()
+            if err_data:
+                print("  Server Stderr:\n", err_data)
+        except Exception as e:
+            print(f"  Could not read server stderr: {e}")
 
     # ── Done ─────────────────────────────────────────────────────────────────
     print("\nMCP server is functional. All tools responded without errors.")

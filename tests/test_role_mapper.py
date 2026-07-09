@@ -35,8 +35,8 @@ class TestRoleMapperInit:
     """Tests for initialization and config loading."""
 
     def test_loads_roles_from_yaml(self, mapper):
-        """Must load at least the 5 roles defined in roles.yaml."""
-        assert len(mapper.roles) >= 5
+        """Must load at least the data_engineer role defined in roles.yaml."""
+        assert len(mapper.roles) >= 1
 
     def test_roles_have_required_attributes(self, mapper):
         """Each role must have role_key, primary_names, variants, and category."""

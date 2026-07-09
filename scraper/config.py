@@ -14,99 +14,15 @@ class ScraperSettings(BaseSettings):
     )
     search_terms: List[str] = Field(
         default=[
-            # Data Engineering & Analytics
             "data engineer",
             "ingeniero de datos",
             "analytics engineer",
-            "ingeniero de analytics",
-            "big data engineer",
             "big data engineer",
             "etl developer",
-            "desarrollador etl",
-            "data analyst",
-            "analista de datos",
-
-            # Machine Learning & AI (Trending 2025-2026)
-            "machine learning engineer",
-            "ingeniero machine learning",
-            "ml engineer",
-            "ai engineer",
-            "ingeniero ia",
-            "ai prompt engineer",
-            "ingeniero de prompts ia",
-            "llm engineer",
-            "data scientist",
-            "científico de datos",
-
-            # Cloud & Infrastructure
-            "cloud architect",
-            "arquitecto de nube",
-            "cloud engineer",
-            "ingeniero de nube",
-            "aws engineer",
-            "ingeniero aws",
-            "gcp engineer",
-            "ingeniero gcp",
-            "azure engineer",
-            "ingeniero azure",
-            "devops engineer",
-            "ingeniero devops",
-            "infrastructure engineer",
-            "ingeniero de infraestructura",
-            "site reliability engineer",
-            "sre engineer",
-
-            # Backend & Full Stack Development
-            "backend developer",
-            "desarrollador backend",
-            "backend engineer",
-            "ingeniero backend",
-            "full stack developer",
-            "desarrollador full stack",
-            "api developer",
-            "desarrollador api",
-
-            # Frontend Development
-            "frontend developer",
-            "desarrollador frontend",
-            "frontend engineer",
-            "ingeniero frontend",
-            "react developer",
-            "desarrollador react",
-
-            # Security & Compliance
-            "security engineer",
-            "ingeniero de seguridad",
-            "cloud security engineer",
-            "ingeniero de seguridad en nube",
-
-            # Architecture & Strategy
-            "solutions architect",
-            "arquitecto de soluciones",
-            "technical architect",
-            "arquitecto técnico",
-            "software architect",
-            "arquitecto de software",
-
-            # Data & BI Platforms
-            "bi developer",
-            "desarrollador de bi",
-            "tableau developer",
-            "desarrollador tableau",
-            "power bi developer",
-            "desarrollador power bi",
-            "dbt developer",
-            "desarrollador dbt",
-
-            # Leadership & Management
-            "engineering manager",
-            "gerente de ingeniería",
-            "tech lead",
-            "líder técnico",
-            "product manager",
-            "gerente de producto",
+            "data pipeline engineer",
+            "data architect"
         ],
-        description="Search terms for job queries - Tech roles 2025-2026"
+        description="Search terms for job queries - Data Engineer roles"
     )
     timeout: int = Field(
         default=10,

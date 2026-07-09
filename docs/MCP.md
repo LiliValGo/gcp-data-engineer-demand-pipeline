@@ -152,16 +152,48 @@ npx @modelcontextprotocol/inspector python run_mcp.py
 
 ---
 
-## Claude Desktop Config (future)
+## Claude Desktop Config
 
-Once the server is deployed to Cloud Run (Phase 4), add this block to
-`~/Library/Application Support/Claude/claude_desktop_config.json`:
+### Option A: SSE Mode with Local Proxy (Recommended for macOS)
+Since macOS sandboxing often blocks Claude Desktop from executing a local Python binary directly inside the `Documents` directory (resulting in `PermissionError: [Errno 1] Operation not permitted: .../venv/pyvenv.cfg`), the recommended approach is to run the MCP server over SSE (HTTP) and use `mcp-remote` as a local proxy.
+
+1. **Start the MCP server in SSE mode in your terminal**:
+   ```bash
+   MCP_TRANSPORT=sse PORT=8000 python run_mcp.py
+   ```
+
+2. **Configure Claude Desktop** to use the local proxy:
+   Update your `~/Library/Application Support/Claude/claude_desktop_config.json` configuration file with the following:
+   ```json
+   {
+     "mcpServers": {
+       "job-market-pipeline": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-remote",
+           "http://localhost:8000/sse"
+         ]
+       }
+     }
+   }
+   ```
+   *Note: If `npx` is not on Claude's default path, use the absolute path to your `npx` binary, for example: `/Users/lilivalgo/.local/bin/npx`.*
+
+3. **Restart Claude Desktop**.
+
+---
+
+### Option B: Stdio Mode (Direct Execution)
+If you do not experience macOS TCC sandboxing issues, you can run the server directly:
+
+Add this block to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "job-market-pipeline": {
-      "command": "python",
+      "command": "/absolute/path/to/venv/bin/python",
       "args": ["/absolute/path/to/run_mcp.py"]
     }
   }

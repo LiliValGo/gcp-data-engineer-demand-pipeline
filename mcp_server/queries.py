@@ -33,7 +33,14 @@ def get_pipeline(db_path: str = _DEFAULT_DB, read_only: bool = False) -> Medalli
     """Return the singleton MedallionPipeline; creates it on the first call."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = MedallionPipeline(duckdb_path=db_path, read_only=read_only)
+        role_yaml = str(_PROJECT_ROOT / "role_mapper" / "config" / "roles.yaml")
+        bronze_dir = str(_PROJECT_ROOT / "data" / "bronze")
+        _pipeline = MedallionPipeline(
+            duckdb_path=db_path,
+            read_only=read_only,
+            role_mapper_config=role_yaml,
+            bronze_root=bronze_dir
+        )
     return _pipeline
 
 
@@ -43,6 +50,23 @@ def reset_pipeline() -> None:
     if _pipeline is not None:
         _pipeline.close()
     _pipeline = None
+
+
+def _canonicalize_role(role: str) -> str:
+    """Normalize the role string to the canonical role key (e.g., 'data engineer' -> 'data_engineer')."""
+    from role_mapper.role_mapper import RoleMapper
+    role_yaml = str(_PROJECT_ROOT / "role_mapper" / "config" / "roles.yaml")
+    try:
+        mapper = RoleMapper(role_yaml)
+        canonical = mapper.find_role(role)
+        if canonical:
+            return canonical.role_key
+    except Exception as e:
+        logger.warning(f"Failed to canonicalize role '{role}': {e}")
+    
+    # Fallback to standard lowercase snake_case
+    return role.lower().replace(" ", "_")
+
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +104,7 @@ def get_top_skills(role: str, limit: int = 20) -> list[dict]:
     Uses parameterized query to prevent SQL injection.
     """
     pipeline = get_pipeline()
+    role_key = _canonicalize_role(role)
     df = pipeline.query(
         """
         SELECT
@@ -91,7 +116,7 @@ def get_top_skills(role: str, limit: int = 20) -> list[dict]:
         ORDER BY mention_count DESC
         LIMIT ?
         """,
-        [role, limit],
+        [role_key, limit],
     )
     return df.to_dict(orient="records")
 
@@ -107,6 +132,7 @@ def get_demand_trends(role: str) -> list[dict]:
     Returns date as ISO string (YYYY-MM-DD) so it is directly JSON-serialisable.
     """
     pipeline = get_pipeline()
+    role_key = _canonicalize_role(role)
     df = pipeline.query(
         """
         SELECT
@@ -118,7 +144,7 @@ def get_demand_trends(role: str) -> list[dict]:
         ORDER BY date DESC
         LIMIT 30
         """,
-        [role],
+        [role_key],
     )
     return df.to_dict(orient="records")
 
@@ -135,6 +161,7 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
              avg_max_salary_usd, max_salary_usd, median_min_usd.
     """
     pipeline = get_pipeline()
+    role_key = _canonicalize_role(role)
 
     if city:
         df = pipeline.query(
@@ -152,7 +179,7 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
               AND city = ?
             ORDER BY jobs_with_salary DESC
             """,
-            [role, city],
+            [role_key, city],
         )
     else:
         df = pipeline.query(
@@ -169,7 +196,7 @@ def get_salary_trends(role: str, city: Optional[str] = None) -> list[dict]:
             WHERE canonical_role = ?
             ORDER BY jobs_with_salary DESC
             """,
-            [role],
+            [role_key],
         )
 
     return df.to_dict(orient="records")
