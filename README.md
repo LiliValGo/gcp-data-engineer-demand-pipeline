@@ -45,7 +45,26 @@ See [docs/MCP.md](docs/MCP.md) for the MCP Server tools.
 
 ---
 
-## Quick Start
+## Environments
+
+The system is designed to run in two environments:
+
+### A. Local Development (DuckDB + Local Storage)
+Ideal for testing changes quickly.
+- **Bronze**: Saved locally as Snappy-compressed Parquet files under `data/bronze/`.
+- **Silver / Gold**: Stored in a local DuckDB database (`data/pipeline.duckdb`).
+- **MCP Server**: Queryable locally via stdio or SSE.
+
+### B. Production GCP (BigQuery + Cloud Storage)
+Fully managed production environment orchestrated by Google Cloud Platform.
+- **Bronze**: Uploaded directly to a secure Google Cloud Storage (GCS) bucket.
+- **Silver / Gold**: Built as native BigQuery tables in datasets `silver` and `gold`.
+- **Compute**: Scraper runs as a daily Cloud Run Job. MCP Server is hosted as a Cloud Run Service using the SSE transport.
+- **Secrets & Infrastructure**: Managed declaratively via Terraform with Secret Manager for API Keys.
+
+---
+
+## Quick Start (Local)
 
 ```bash
 # 1. Create and activate virtual environment
@@ -63,6 +82,34 @@ python run_mcp.py
 
 # SSE Mode (Recommended for macOS sandbox bypass, runs on port 8000):
 # MCP_TRANSPORT=sse PORT=8000 python run_mcp.py
+```
+
+---
+
+## GCP Deployment & Run
+
+### 1. Build and Push Container Images
+Build the scraper and server container and upload it to Artifact Registry:
+```bash
+# Login to Artifact Registry
+gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://us-central1-docker.pkg.dev
+
+# Build & Push
+docker build --platform linux/amd64 -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/job-market-pipeline/scraper:latest -f Dockerfile.scraper .
+docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/job-market-pipeline/scraper:latest
+```
+
+### 2. Provision Infrastructure & Deploy
+Navigate to the `infra` folder and deploy with Terraform:
+```bash
+cd infra
+terraform init
+terraform apply -var="project_id=YOUR_PROJECT_ID"
+```
+
+### 3. Run Scraper Job on Demand
+```bash
+gcloud run jobs execute job-scraper --region us-central1
 ```
 
 ---

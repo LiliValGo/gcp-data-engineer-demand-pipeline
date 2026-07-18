@@ -23,8 +23,12 @@ SELECT
     AVG(salary_usd_min)                             AS avg_min_salary_usd,
     AVG(salary_usd_max)                             AS avg_max_salary_usd,
     MAX(salary_usd_max)                             AS max_salary_usd,
+    {% if target.type == 'bigquery' %}
+    APPROX_QUANTILES(salary_usd_min, 100)[OFFSET(50)] AS median_min_usd
+    {% else %}
     PERCENTILE_CONT(0.5) WITHIN GROUP
         (ORDER BY salary_usd_min)                   AS median_min_usd
+    {% endif %}
 FROM {{ source('silver', 'jobs') }}
 WHERE salary_usd_min IS NOT NULL
 GROUP BY

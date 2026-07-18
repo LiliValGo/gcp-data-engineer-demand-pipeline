@@ -26,8 +26,12 @@ WITH skills_unnested AS (
         job_id,
         canonical_role,
         LOWER(TRIM(skill)) AS skill
-    FROM {{ source('silver', 'jobs') }},
-        LATERAL UNNEST(skills) AS t(skill)
+    FROM {{ source('silver', 'jobs') }}
+    {% if target.type == 'bigquery' %}
+    , UNNEST(skills) AS skill
+    {% else %}
+    , LATERAL UNNEST(skills) AS t(skill)
+    {% endif %}
     WHERE skills IS NOT NULL
 ),
 

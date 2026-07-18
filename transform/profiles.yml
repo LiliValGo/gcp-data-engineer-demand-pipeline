@@ -8,7 +8,7 @@ job_market_pipeline:
       # medallion.py writes to. dbt opens it in read-write mode to create
       # the Gold tables.
       # Phase 4: swap this entire block for a BigQuery profile — models run unchanged.
-      path: '../data/pipeline.duckdb'
+      path: "{{ env_var('DBT_DUCKDB_PATH', '../data/pipeline.duckdb') }}"
       schema: main
       threads: 1
     prod:

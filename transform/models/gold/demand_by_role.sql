@@ -13,14 +13,22 @@
 
 SELECT
     canonical_role,
+    {% if target.type == 'bigquery' %}
+    CAST(CAST(scraped_at AS TIMESTAMP) AS DATE) AS date,
+    {% else %}
     CAST(scraped_at AS DATE)      AS date,
+    {% endif %}
     COUNT(*)                       AS job_count,
     COUNT(DISTINCT company)        AS unique_companies,
     AVG(extraction_quality_score)  AS avg_quality_score
 FROM {{ source('silver', 'jobs') }}
 GROUP BY
     canonical_role,
+    {% if target.type == 'bigquery' %}
+    CAST(CAST(scraped_at AS TIMESTAMP) AS DATE)
+    {% else %}
     CAST(scraped_at AS DATE)
+    {% endif %}
 ORDER BY
     date DESC,
     job_count DESC

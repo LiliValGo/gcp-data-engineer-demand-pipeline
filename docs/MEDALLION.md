@@ -64,11 +64,11 @@ Parquet file itself.
 
 ## Silver Layer — Cleaned Data
 
-| Property   | Value                                              |
-|------------|----------------------------------------------------|
-| Location   | `data/pipeline.duckdb` → schema `silver`           |
-| Table      | `silver.jobs`                                      |
-| Primary key| `job_id` (MD5 of `url`)                            |
+| Property   | Local Environment (DuckDB)                         | Production Environment (BigQuery)                  |
+|------------|----------------------------------------------------|-----------------------------------------------------|
+| Location   | `data/pipeline.duckdb` → schema `silver`           | Dataset: `silver`                                   |
+| Table      | `silver.jobs`                                      | Table: `jobs`                                       |
+| Primary key| `job_id` (MD5 of `url`)                            | `job_id` (MD5 of `url`)                            |
 
 ### Transformations applied
 
@@ -107,9 +107,9 @@ production.
 
 ## Gold Layer — Analytics Tables
 
-All three tables are refreshed with `CREATE OR REPLACE TABLE` on every pipeline
-run. Full refresh is fast for datasets under ~1 M rows; switch to incremental
-`INSERT/MERGE` in Phase 4.
+In both environments, the Gold tables aggregate cleaned data from the Silver layer for analytical workloads.
+- **Local Environment (DuckDB)**: Refreshed with full `CREATE OR REPLACE TABLE` statements.
+- **Production Environment (BigQuery)**: Managed as native BigQuery tables in the `gold` dataset (populated via dbt with `--target prod`).
 
 ### `gold.demand_by_role`
 

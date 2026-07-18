@@ -85,8 +85,9 @@ resource "google_secret_manager_secret_iam_member" "secret_reader" {
 
 # ── 6. Cloud Run Job (Scraper + dbt run) ─────────────────────────────────────
 resource "google_cloud_run_v2_job" "scraper" {
-  name     = "job-scraper"
-  location = var.region
+  name                = "job-scraper"
+  location            = var.region
+  deletion_protection = false
 
   template {
     template {
@@ -104,6 +105,14 @@ resource "google_cloud_run_v2_job" "scraper" {
 
         env {
           name  = "GCP_PROJECT_ID"
+          value = var.project_id
+        }
+        env {
+          name  = "GCP_PROJECT"
+          value = var.project_id
+        }
+        env {
+          name  = "GOOGLE_CLOUD_PROJECT"
           value = var.project_id
         }
         env {
@@ -135,69 +144,11 @@ resource "google_cloud_run_v2_job" "scraper" {
   }
 }
 
-# ── 7. Cloud Run Service (FastAPI Web Explorer) ──────────────────────────────
-resource "google_cloud_run_v2_service" "web" {
-  name     = "job-explorer-web"
-  location = var.region
-
-  template {
-    service_account = google_service_account.pipeline_sa.email
-
-    scaling {
-      min_instance_count = 0
-      max_instance_count = 5
-    }
-
-    containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.repository_id}/web:latest"
-
-      ports {
-        container_port = 8080
-      }
-
-      env {
-        name  = "GCP_PROJECT_ID"
-        value = var.project_id
-      }
-      env {
-        name  = "FASTAPI_HOST"
-        value = "0.0.0.0"
-      }
-      env {
-        name  = "FASTAPI_PORT"
-        value = "8080"
-      }
-
-      env {
-        name = "GOOGLE_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.gemini_key.secret_id
-            version = "latest"
-          }
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    ignore_changes = [
-      template[0].containers[0].image
-    ]
-  }
-}
-
-resource "google_cloud_run_service_iam_member" "public_web" {
-  location = google_cloud_run_v2_service.web.location
-  service  = google_cloud_run_v2_service.web.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
-
-# ── 8. Cloud Run Service (MCP Server SSE) ────────────────────────────────────
+# ── 7. Cloud Run Service (MCP Server SSE) ────────────────────────────────────
 resource "google_cloud_run_v2_service" "mcp" {
-  name     = "job-explorer-mcp"
-  location = var.region
+  name                = "job-explorer-mcp"
+  location            = var.region
+  deletion_protection = false
 
   template {
     service_account = google_service_account.pipeline_sa.email
@@ -208,7 +159,7 @@ resource "google_cloud_run_v2_service" "mcp" {
     }
 
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.repository_id}/web:latest"
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.repository_id}/scraper:latest"
 
       ports {
         container_port = 8080
@@ -221,12 +172,20 @@ resource "google_cloud_run_v2_service" "mcp" {
         value = var.project_id
       }
       env {
-        name  = "MCP_TRANSPORT"
-        value = "sse"
+        name  = "GCP_PROJECT"
+        value = var.project_id
       }
       env {
-        name  = "PORT"
-        value = "8080"
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+      env {
+        name  = "GCS_BUCKET"
+        value = google_storage_bucket.bronze.name
+      }
+      env {
+        name  = "MCP_TRANSPORT"
+        value = "sse"
       }
 
       env {

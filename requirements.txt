@@ -24,6 +24,7 @@ pyarrow==19.0.0
 # dbt — Silver → Gold transformations (Phase 3)
 # dbt-duckdb 1.7.x requires duckdb>=0.10.0,<1.2.0 — compatible with 1.1.3
 dbt-duckdb==1.7.4
+dbt-bigquery==1.7.2
 # protobuf>=5 removed MessageToJson(including_default_value_fields=...) used by dbt 1.7.x
 protobuf>=3.20.3,<5.0.0
 

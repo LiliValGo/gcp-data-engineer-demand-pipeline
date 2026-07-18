@@ -4,7 +4,6 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
-    libgconf-2-4 \
     libnss3 \
     libxss1 \
     libasound2 \
@@ -27,7 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY role_mapper/ ./role_mapper/
 COPY scraper/ ./scraper/
 COPY transform/ ./transform/
+COPY mcp_server/ ./mcp_server/
 COPY main_scraper.py .
+COPY run_mcp.py .
 COPY run_pipeline.sh .
 
 # Ensure scraper runs in headless mode

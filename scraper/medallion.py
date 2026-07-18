@@ -30,6 +30,8 @@ from role_mapper.role_mapper import RoleMapper
 
 logger = logging.getLogger(__name__)
 
+_PROJECT_ROOT = Path(__file__).parent.parent
+
 # Exchange rates fallback to USD (approximate, May 2026)
 _FX_FALLBACK = {
     "USD": 1.0,
@@ -120,12 +122,15 @@ class MedallionPipeline:
 
         self.duckdb_path = Path(duckdb_path)
         self.bronze_root = Path(bronze_root)
-        if not self.is_gcs and not read_only:
-            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.conn = duckdb.connect(str(self.duckdb_path), read_only=read_only)
-        if not read_only:
-            self._init_schemas()
+        self.read_only = read_only
+        if self.is_gcs:
+            self.conn = duckdb.connect(":memory:")
+        else:
+            if not read_only:
+                self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+            self.conn = duckdb.connect(str(self.duckdb_path), read_only=read_only)
+            if not read_only:
+                self._init_schemas()
 
         # RoleMapper is used to normalize each job's search_term to a
         # canonical role_key (e.g. "ingeniero de datos" → "data_engineer")
@@ -447,10 +452,10 @@ class MedallionPipeline:
                     BEGIN TRANSACTION;
                     DELETE FROM `{dest_table_id}` WHERE job_id IN (SELECT job_id FROM `{staging_table_id}`);
                     INSERT INTO `{dest_table_id}` SELECT * FROM `{staging_table_id}`;
-                    DROP TABLE `{staging_table_id}`;
                     COMMIT TRANSACTION;
                 """
                 bq_client.query(dml).result()
+                bq_client.delete_table(staging_table_id, not_found_ok=True)
             except Exception:
                 job_config = bigquery.LoadJobConfig(write_disposition="WRITE_EMPTY")
                 bq_client.load_table_from_dataframe(silver_df, dest_table_id, job_config=job_config).result()
@@ -492,95 +497,72 @@ class MedallionPipeline:
         """
         Build (or refresh) the three Gold analytics tables from silver.jobs.
 
-        All three tables use CREATE OR REPLACE — they are fully recomputed on
-        each run. This is appropriate for small datasets (<1M rows).
+        This delegates table creation to dbt, unifying local and production
+        environments by executing 'dbt run --target dev' locally or
+        'dbt run --target prod' when deployed to GCP.
         """
-        silver_count = self.conn.execute(
-            "SELECT COUNT(*) FROM silver.jobs"
-        ).fetchone()[0]
+        if self.is_gcs:
+            from google.cloud import bigquery
+            from scraper.config import settings
+            bq_client = bigquery.Client()
+            try:
+                query = f"SELECT COUNT(*) as count FROM `{settings.gcp_project}.silver.jobs`"
+                silver_count = list(bq_client.query(query).result())[0].count
+            except Exception:
+                silver_count = 0
+        else:
+            silver_count = self.conn.execute(
+                "SELECT COUNT(*) FROM silver.jobs"
+            ).fetchone()[0]
 
         if silver_count == 0:
             logger.warning("silver.jobs is empty — skipping Gold layer build")
             return
 
-        # --- gold.demand_by_role ---
-        # Answers: "How many jobs are posted per role per day?"
-        self.conn.execute("""
-            CREATE OR REPLACE TABLE gold.demand_by_role AS
-            SELECT
-                canonical_role,
-                CAST(scraped_at AS DATE)      AS date,
-                COUNT(*)                       AS job_count,
-                COUNT(DISTINCT company)        AS unique_companies,
-                AVG(extraction_quality_score)  AS avg_quality_score
-            FROM silver.jobs
-            GROUP BY canonical_role, CAST(scraped_at AS DATE)
-            ORDER BY date DESC, job_count DESC
-        """)
+        logger.info("Running dbt for Gold layer...")
+        import subprocess
 
-        # --- gold.salary_trends ---
-        # Answers: "What is the salary range for each role by city?"
-        # PERCENTILE_CONT is an ordered-set aggregate — same syntax as BigQuery.
-        self.conn.execute("""
-            CREATE OR REPLACE TABLE gold.salary_trends AS
-            SELECT
-                canonical_role,
-                COALESCE(city, 'Remote/Unknown')               AS city,
-                COUNT(*)                                        AS jobs_with_salary,
-                MIN(salary_usd_min)                             AS min_salary_usd,
-                AVG(salary_usd_min)                             AS avg_min_salary_usd,
-                AVG(salary_usd_max)                             AS avg_max_salary_usd,
-                MAX(salary_usd_max)                             AS max_salary_usd,
-                PERCENTILE_CONT(0.5) WITHIN GROUP
-                    (ORDER BY salary_usd_min)                   AS median_min_usd
-            FROM silver.jobs
-            WHERE salary_usd_min IS NOT NULL
-            GROUP BY canonical_role, COALESCE(city, 'Remote/Unknown')
-            ORDER BY canonical_role, jobs_with_salary DESC
-        """)
+        # Temporarily close the DuckDB connection to release the file lock for dbt
+        self.conn.close()
 
-        # --- gold.skills_frequency ---
-        # Answers: "What % of jobs for this role mention each skill?"
-        # UNNEST expands the VARCHAR[] array into individual rows.
-        # pct_of_role_jobs = jobs mentioning the skill / total jobs with skills for that role.
-        # (Previous formula used total skill mentions as denominator, which was misleading.)
-        self.conn.execute("""
-            CREATE OR REPLACE TABLE gold.skills_frequency AS
-            WITH skills_unnested AS (
-                SELECT
-                    job_id,
-                    canonical_role,
-                    LOWER(TRIM(skill)) AS skill
-                FROM silver.jobs,
-                    LATERAL UNNEST(skills) AS t(skill)
-                WHERE skills IS NOT NULL
-            ),
-            role_job_counts AS (
-                SELECT
-                    canonical_role,
-                    COUNT(DISTINCT job_id) AS total_jobs_with_skills
-                FROM silver.jobs
-                WHERE skills IS NOT NULL
-                GROUP BY canonical_role
+        import os
+        env = os.environ.copy()
+        env["DBT_DUCKDB_PATH"] = str(self.duckdb_path.resolve())
+
+        try:
+            target = "prod" if self.is_gcs else "dev"
+            res = subprocess.run(
+                ["dbt", "run", "--target", target, "--profiles-dir", ".", "--project-dir", "."],
+                cwd=str(_PROJECT_ROOT / "transform"),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True
             )
-            SELECT
-                su.canonical_role,
-                su.skill,
-                COUNT(*)                                               AS mention_count,
-                ROUND(
-                    COUNT(DISTINCT su.job_id) * 100.0 / rjc.total_jobs_with_skills,
-                    2
-                )                                                      AS pct_of_role_jobs
-            FROM skills_unnested su
-            JOIN role_job_counts rjc USING (canonical_role)
-            GROUP BY su.canonical_role, su.skill, rjc.total_jobs_with_skills
-            ORDER BY su.canonical_role, mention_count DESC
-        """)
+            logger.info(f"dbt run succeeded:\n{res.stdout}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"dbt run failed:\n{e.stderr}\n{e.stdout}")
+            raise
+        finally:
+            # Reopen the DuckDB connection for subsequent Python processes/queries
+            self.conn = duckdb.connect(str(self.duckdb_path), read_only=self.read_only)
 
         # Log Gold table sizes for observability
-        for table in ["demand_by_role", "salary_trends", "skills_frequency"]:
-            n = self.conn.execute(f"SELECT COUNT(*) FROM gold.{table}").fetchone()[0]
-            logger.info(f"gold.{table}: {n} rows")
+        if self.is_gcs:
+            from google.cloud import bigquery
+            from scraper.config import settings
+            bq_client = bigquery.Client()
+            for table in ["demand_by_role", "salary_trends", "skills_frequency"]:
+                try:
+                    query = f"SELECT COUNT(*) as count FROM `{settings.gcp_project}.gold.{table}`"
+                    n = list(bq_client.query(query).result())[0].count
+                except Exception:
+                    n = 0
+                logger.info(f"gold.{table} (BigQuery): {n} rows")
+        else:
+            for table in ["demand_by_role", "salary_trends", "skills_frequency"]:
+                n = self.conn.execute(f"SELECT COUNT(*) FROM gold.{table}").fetchone()[0]
+                logger.info(f"gold.{table}: {n} rows")
 
     # ------------------------------------------------------------------
     # Orchestrator
@@ -598,23 +580,7 @@ class MedallionPipeline:
 
         silver_rows = self.run_bronze_to_silver()
         if silver_rows > 0:
-            if self.is_gcs:
-                logger.info("Running dbt on BigQuery for Gold layer...")
-                import subprocess
-                try:
-                    res = subprocess.run(
-                        ["dbt", "run", "--target", "prod"],
-                        cwd="transform",
-                        capture_output=True,
-                        text=True,
-                        check=True
-                    )
-                    logger.info(f"dbt run succeeded:\n{res.stdout}")
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"dbt run failed:\n{e.stderr}\n{e.stdout}")
-                    raise
-            else:
-                self.run_silver_to_gold()
+            self.run_silver_to_gold()
 
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         logger.info(f"=== Medallion Pipeline finished in {elapsed:.1f}s ===")
@@ -634,12 +600,14 @@ class MedallionPipeline:
             conn = dbapi.connect()
             cursor = conn.cursor()
             if params:
-                cursor.execute(sql, params)
+                # BigQuery DB-API uses pyformat (%s) parameter style
+                sql_bq = sql.replace("?", "%s")
+                cursor.execute(sql_bq, params)
             else:
                 cursor.execute(sql)
             # Fetch results into DataFrame
             columns = [col[0] for col in cursor.description] if cursor.description else []
-            data = cursor.fetchall()
+            data = [tuple(r) for r in cursor.fetchall()]
             return pd.DataFrame(data, columns=columns)
         else:
             if params:
@@ -650,14 +618,30 @@ class MedallionPipeline:
         """Return row counts for all Gold tables as a health-check dict."""
         tables = ["demand_by_role", "salary_trends", "skills_frequency"]
         summary = {}
-        for table in tables:
+        if self.is_gcs:
+            from google.cloud import bigquery
+            from scraper.config import settings
+            bq_client = bigquery.Client()
+            for table in tables:
+                try:
+                    query = f"SELECT COUNT(*) as count FROM `{settings.gcp_project}.gold.{table}`"
+                    summary[f"gold.{table}"] = list(bq_client.query(query).result())[0].count
+                except Exception:
+                    summary[f"gold.{table}"] = None
             try:
-                n = self.conn.execute(f"SELECT COUNT(*) FROM gold.{table}").fetchone()[0]
-                summary[f"gold.{table}"] = n
-            except duckdb.Error:
-                summary[f"gold.{table}"] = None
-        silver_n = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
-        summary["silver.jobs"] = silver_n
+                query = f"SELECT COUNT(*) as count FROM `{settings.gcp_project}.silver.jobs`"
+                summary["silver.jobs"] = list(bq_client.query(query).result())[0].count
+            except Exception:
+                summary["silver.jobs"] = None
+        else:
+            for table in tables:
+                try:
+                    n = self.conn.execute(f"SELECT COUNT(*) FROM gold.{table}").fetchone()[0]
+                    summary[f"gold.{table}"] = n
+                except duckdb.Error:
+                    summary[f"gold.{table}"] = None
+            silver_n = self.conn.execute("SELECT COUNT(*) FROM silver.jobs").fetchone()[0]
+            summary["silver.jobs"] = silver_n
         return summary
 
     # ------------------------------------------------------------------

@@ -184,7 +184,29 @@ Since macOS sandboxing often blocks Claude Desktop from executing a local Python
 
 ---
 
-### Option B: Stdio Mode (Direct Execution)
+### Option B: Production GCP Mode (Cloud Run over SSE)
+When the MCP server is deployed to Google Cloud Run, Claude Desktop can connect to it securely over HTTP/SSE. No local server processes are required.
+
+Update your `~/Library/Application Support/Claude/claude_desktop_config.json` configuration file with:
+```json
+{
+  "mcpServers": {
+    "job-market-pipeline-gcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://job-explorer-mcp-5wwvdd5vha-uc.a.run.app/sse"
+      ]
+    }
+  }
+}
+```
+*Note: Make sure to restart Claude Desktop after editing the configuration.*
+
+---
+
+### Option C: Stdio Mode (Direct Execution)
 If you do not experience macOS TCC sandboxing issues, you can run the server directly:
 
 Add this block to `~/Library/Application Support/Claude/claude_desktop_config.json`:

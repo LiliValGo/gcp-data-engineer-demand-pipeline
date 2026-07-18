@@ -197,5 +197,5 @@ infra/
 | 0     | Done    | Foundation: tests, quality framework, router    |
 | 1     | Done    | Bronze/Silver/Gold, DuckDB, Parquet             |
 | 2     | Done    | MCP Server — Claude queries Gold layer          |
-| 3     | Planned | dbt models + Makefile + GitHub Actions CI       |
-| 4     | Planned | GCP: GCS + BigQuery + Cloud Run + Terraform     |
+| 3     | Done    | dbt models + Makefile + GCP target profiles     |
+| 4     | Done    | GCP Deployment: BigQuery, GCS, Cloud Run, Terraform |

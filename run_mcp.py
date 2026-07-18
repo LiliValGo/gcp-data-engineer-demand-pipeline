@@ -43,12 +43,12 @@ try:
         if transport == "sse":
             port = int(os.getenv("PORT", "8000"))
             mcp.settings.port = port
-            logging.warning(f"Starting MCP server on SSE transport on port {port}...")
+            mcp.settings.host = "0.0.0.0"
+            logging.warning(f"Starting MCP server on SSE transport on {mcp.settings.host}:{port}...")
             mcp.run(transport="sse")
         else:
             mcp.run(transport="stdio")
 except BaseException as e:
-    with open("/Users/lilivalgo/Documents/gcp-data-engineer-demand-pipeline/mcp_crash.log", "w") as f:
-        f.write(f"Crash occurred: {str(type(e))} - {str(e)}\n")
-        traceback.print_exc(file=f)
+    sys.stderr.write(f"Crash occurred: {type(e).__name__} - {e}\n")
+    traceback.print_exc(file=sys.stderr)
     raise

@@ -17,10 +17,14 @@ Usage:
 """
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from mcp_server import queries
 
-mcp = FastMCP("job-market-pipeline")
+mcp = FastMCP(
+    "job-market-pipeline",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
+)
 
 # Open the DB in read-only mode at startup.
 # This releases the exclusive file lock so the scraper can write to
