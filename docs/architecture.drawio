@@ -1,152 +1,99 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="Electron" modified="2026-07-18T17:46:00.000Z" agent="Mozilla/5.0" version="21.6.8" type="device">
+<mxfile host="Electron" agent="Mozilla/5.0">
   <diagram id="pipeline-architecture" name="Job Market Pipeline Architecture">
-    <mxGraphModel dx="1200" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="1118" dy="868" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
-        <!-- Layer 0 (System) -->
         <mxCell id="0" />
-        <!-- Layer 1 (User / Graph) -->
         <mxCell id="1" parent="0" />
-
-        <!-- ==================== LOCAL ENVIRONMENT GROUP ==================== -->
-        <mxCell id="group-local" value="LOCAL ENVIRONMENT (Development &amp; Local Run)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontStyle=1;align=left;spacingLeft=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="40" width="480" height="740" as="geometry" />
+        <mxCell id="group-local" parent="1" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;align=left;spacingLeft=10;" value="LOCAL ENVIRONMENT" vertex="1">
+          <mxGeometry height="740" width="480" x="40" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-source" value="Getonbrd.com API / HTML" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#B85450;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="140" y="50" width="200" height="50" as="geometry" />
+        <mxCell id="local-source" parent="group-local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fa6800;strokeColor=#C73500;fontStyle=1;fontColor=#000000;" value="Getonbrd.com API / HTML" vertex="1">
+          <mxGeometry height="50" width="200" x="140" y="50" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-scraper" value="Scraper CLI&#xa;(main_scraper.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="140" y="140" width="200" height="60" as="geometry" />
+        <mxCell id="local-scraper" parent="group-local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e51400;strokeColor=#B20000;fontStyle=1;fontColor=#ffffff;" value="Scraper CLI&#xa;(main_scraper.py)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="140" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-bronze" value="Bronze Layer&#xa;(data/bronze/*.parquet)" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="140" y="240" width="200" height="80" as="geometry" />
+        <mxCell id="local-bronze" parent="group-local" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e3c800;strokeColor=#B09500;fontStyle=1;fontColor=#000000;" value="Bronze Layer&#xa;(data/bronze/*.parquet)" vertex="1">
+          <mxGeometry height="80" width="200" x="140" y="240" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-dbt" value="dbt Core (dev profile)&#xa;medallion.py (DuckDB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="140" y="360" width="200" height="60" as="geometry" />
+        <mxCell id="local-dbt" parent="group-local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontStyle=1;fontColor=#000000;" value="dbt Core (dev profile)&#xa;medallion.py (DuckDB)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="360" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-duckdb" value="DuckDB Database&#xa;(data/pipeline.duckdb)&#xa;[silver.jobs]&#xa;[gold.demand_by_role]&#xa;[gold.salary_trends]&#xa;[gold.skills_frequency]" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="130" y="460" width="220" height="130" as="geometry" />
+        <mxCell id="local-duckdb" parent="group-local" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#76608a;strokeColor=#432D57;fontStyle=1;fontColor=#ffffff;" value="DuckDB Database&#xa;(data/pipeline.duckdb)&#xa;[silver.jobs]&#xa;[gold.demand_by_role]&#xa;[gold.salary_trends]&#xa;[gold.skills_frequency]" vertex="1">
+          <mxGeometry height="130" width="220" x="130" y="460" as="geometry" />
         </mxCell>
-
-        <mxCell id="local-mcp" value="Local MCP Server&#xa;(run_mcp.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontStyle=1" vertex="1" parent="group-local">
-          <mxGeometry x="140" y="630" width="200" height="60" as="geometry" />
+        <mxCell id="local-mcp" parent="group-local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontStyle=1;fontColor=#ffffff;" value="Local MCP Server&#xa;(run_mcp.py)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="630" as="geometry" />
         </mxCell>
-
-
-        <!-- ==================== PRODUCTION GCP ENVIRONMENT GROUP ==================== -->
-        <mxCell id="group-prod" value="PRODUCTION ENVIRONMENT (Google Cloud Platform)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F9F9F9;strokeColor=#FF6600;fontStyle=1;align=left;spacingLeft=10;" vertex="1" parent="1">
-          <mxGeometry x="640" y="40" width="480" height="740" as="geometry" />
+        <mxCell id="group-prod" parent="1" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;align=left;spacingLeft=10;" value="PRODUCTION ENVIRONMENT (Google Cloud Platform)" vertex="1">
+          <mxGeometry height="740" width="480" x="640" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-scheduler" value="Cloud Scheduler&#xa;(Cron trigger daily)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="140" y="50" width="200" height="50" as="geometry" />
+        <mxCell id="prod-scheduler" parent="group-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a917;strokeColor=#2D7600;fontStyle=1;fontColor=#ffffff;" value="Cloud Scheduler&#xa;(Cron trigger daily)" vertex="1">
+          <mxGeometry height="50" width="200" x="140" y="50" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-run-job" value="Cloud Run Job&#xa;(job-scraper)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="140" y="140" width="200" height="60" as="geometry" />
+        <mxCell id="prod-run-job" parent="group-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#A50040;fontStyle=1;fontColor=#ffffff;" value="Cloud Run Job&#xa;(job-scraper)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="140" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-gcs" value="GCS Bucket&#xa;(pipeline-bronze-bucket)" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="140" y="240" width="200" height="80" as="geometry" />
+        <mxCell id="prod-gcs" parent="group-prod" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#6a00ff;strokeColor=#3700CC;fontStyle=1;fontColor=#ffffff;" value="GCS Bucket&#xa;(pipeline-bronze-bucket)" vertex="1">
+          <mxGeometry height="80" width="200" x="140" y="240" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-dbt" value="dbt Core (prod profile)&#xa;medallion.py (BigQuery)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="140" y="360" width="200" height="60" as="geometry" />
+        <mxCell id="prod-dbt" parent="group-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a20025;strokeColor=#6F0000;fontStyle=1;fontColor=#ffffff;" value="dbt Core (prod profile)&#xa;medallion.py (BigQuery)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="360" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-bigquery" value="BigQuery Lakehouse&#xa;[silver.jobs]&#xa;[gold.demand_by_role]&#xa;[gold.salary_trends]&#xa;[gold.skills_frequency]" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="130" y="460" width="220" height="130" as="geometry" />
+        <mxCell id="prod-bigquery" parent="group-prod" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#1ba1e2;strokeColor=#006EAF;fontStyle=1;fontColor=#ffffff;" value="BigQuery Lakehouse&#xa;[silver.jobs]&#xa;[gold.demand_by_role]&#xa;[gold.salary_trends]&#xa;[gold.skills_frequency]" vertex="1">
+          <mxGeometry height="130" width="220" x="130" y="460" as="geometry" />
         </mxCell>
-
-        <mxCell id="prod-mcp" value="Cloud Run Service&#xa;(job-explorer-mcp)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontStyle=1" vertex="1" parent="group-prod">
-          <mxGeometry x="140" y="630" width="200" height="60" as="geometry" />
+        <mxCell id="prod-mcp" parent="group-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;fontStyle=1;fontColor=#ffffff;" value="Cloud Run Service&#xa;(job-explorer-mcp)" vertex="1">
+          <mxGeometry height="60" width="200" x="140" y="630" as="geometry" />
         </mxCell>
-
-
-        <!-- ==================== USER / CLIENT (CLAUDE) ==================== -->
-        <mxCell id="client-claude" value="Claude Desktop Client&#xa;(Local Sandbox)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#B85450;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="400" y="820" width="200" height="80" as="geometry" />
+        <mxCell id="client-claude" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#6d8764;fontStyle=1;fontColor=#ffffff;strokeColor=#3A5431;" value="Claude Desktop Client&#xa;(Local Sandbox)" vertex="1">
+          <mxGeometry height="80" width="200" x="470" y="800" as="geometry" />
         </mxCell>
-
-
-        <!-- ==================== CONNECTIONS (LOCAL ENV) ==================== -->
-        <mxCell id="edge-local1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="local-source" target="local-scraper">
+        <mxCell id="edge-local1" edge="1" parent="1" source="local-source" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="local-scraper">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-local2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="local-scraper" target="local-bronze">
+        <mxCell id="edge-local2" edge="1" parent="1" source="local-scraper" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="local-bronze">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-local3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="local-bronze" target="local-dbt">
+        <mxCell id="edge-local3" edge="1" parent="1" source="local-bronze" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="local-dbt">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-local4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="local-dbt" target="local-duckdb">
+        <mxCell id="edge-local4" edge="1" parent="1" source="local-dbt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="local-duckdb">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-local5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="local-duckdb" target="local-mcp">
+        <mxCell id="edge-local5" edge="1" parent="1" source="local-duckdb" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="local-mcp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-
-        <!-- ==================== CONNECTIONS (PROD ENV) ==================== -->
-        <mxCell id="edge-prod1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod-scheduler" target="prod-run-job">
+        <mxCell id="edge-prod1" edge="1" parent="1" source="prod-scheduler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="prod-run-job">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-prod2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod-run-job" target="prod-gcs">
+        <mxCell id="edge-prod2" edge="1" parent="1" source="prod-run-job" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="prod-gcs">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-prod3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod-gcs" target="prod-dbt">
+        <mxCell id="edge-prod3" edge="1" parent="1" source="prod-gcs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="prod-dbt">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-prod4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod-dbt" target="prod-bigquery">
+        <mxCell id="edge-prod4" edge="1" parent="1" source="prod-dbt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="prod-bigquery">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge-prod5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod-bigquery" target="prod-mcp">
+        <mxCell id="edge-prod5" edge="1" parent="1" source="prod-bigquery" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="prod-mcp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-
-        <!-- ==================== CROSS-ENVIRONMENT CONNECTIONS ==================== -->
-        <!-- Scraper prod queries external Getonbrd -->
-        <mxCell id="edge-cross1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeColor=#FF3333;dashed=1;" edge="1" parent="1" source="prod-run-job" target="local-source">
+        <mxCell id="edge-cross1" edge="1" parent="1" source="prod-run-job" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeColor=#FF3333;dashed=1;" target="local-source">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="50" y="50" as="sourcePoint" />
             <mxPoint x="100" y="100" as="targetPoint" />
-            <Array points="600,210;600,115" />
           </mxGeometry>
         </mxCell>
-
-        <!-- Claude client queries local MCP -->
-        <mxCell id="edge-client-local" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.25;exitY=0;entryX=0.5;entryY=1;strokeColor=#82B366;strokeWidth=2;" edge="1" parent="1" source="client-claude" target="local-mcp">
-          <mxGeometry relative="1" as="geometry">
-            <Array points="450,780;220,780" />
-          </mxGeometry>
+        <mxCell id="edge-client-local" edge="1" parent="1" source="client-claude" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.25;exitY=0;entryX=0.5;entryY=1;strokeColor=#82B366;strokeWidth=2;" target="local-mcp">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- Claude client queries production MCP via SSE -->
-        <mxCell id="edge-client-prod" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.75;exitY=0;entryX=0.5;entryY=1;strokeColor=#FF6600;strokeWidth=2;" edge="1" parent="1" source="client-claude" target="prod-mcp">
-          <mxGeometry relative="1" as="geometry">
-            <Array points="550,780;820,780" />
-          </mxGeometry>
+        <mxCell id="edge-client-prod" edge="1" parent="1" source="client-claude" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.75;exitY=0;entryX=0.5;entryY=1;strokeColor=#FF6600;strokeWidth=2;" target="prod-mcp">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- Terraform deploy from local to GCP -->
-        <mxCell id="deploy-tf" value="Terraform Deploy&#xa;&amp; Docker Build/Push" style="shape=doubleArrow;whiteSpace=wrap;html=1;fillColor=#FFCC99;strokeColor=#330000;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="530" y="380" width="100" height="60" as="geometry" />
+        <mxCell id="deploy-tf" parent="1" style="shape=doubleArrow;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontStyle=1;fontColor=#ffffff;" value="Terraform Deploy&#xa;&amp; Docker Build/Push" vertex="1">
+          <mxGeometry height="110" width="150" x="509.5" y="340" as="geometry" />
         </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>
