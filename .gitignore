@@ -46,3 +46,10 @@ htmlcov/
 !role_mapper/config/*.yaml
 service-account*.json
 gcp-credentials*.json
+
+# Terraform - state y variables pueden contener secretos
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
