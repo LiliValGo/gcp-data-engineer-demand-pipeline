@@ -53,3 +53,13 @@ gcp-credentials*.json
 *.tfstate.*
 *.tfvars
 crash.log
+
+# dbt build artifacts - generados en cada `dbt run`
+transform/target/
+transform/logs/
+transform/dbt_packages/
+transform/.user.yml
+
+# Local DuckDB database - generado por el pipeline
+data/pipeline.duckdb
+data/*.duckdb
